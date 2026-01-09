@@ -12,10 +12,10 @@ export default function Navigation({ currentPage }: NavigationProps) {
     const pathname = usePathname();
 
     const navItems = [
-        { id: 'dashboard', icon: LayoutDashboard, label: 'Home', path: '/' },
         { id: 'customers', icon: Users, label: 'Customers', path: '/customers' },
         { id: 'daily', icon: CheckSquare, label: 'Daily', path: '/daily' },
         { id: 'pending', icon: Clock, label: 'Pending', path: '/pending' },
+        { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', path: '/' },
         { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' }
     ];
 

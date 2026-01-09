@@ -11,11 +11,12 @@ import {
     Smartphone,
     HelpCircle,
     Info,
-    LogOut,
     Trash2,
     Download,
+    Briefcase,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
+import ProfileManager from "@/components/ProfileManager";
 import { Storage } from "@/lib/storage";
 import type { Profile, Customer, Payment } from "@/types";
 
@@ -29,13 +30,20 @@ export default function SettingsPage() {
     const router = useRouter();
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [theme, setTheme] = useState("light");
+    const [showProfileManager, setShowProfileManager] = useState(false);
     const [notifications, setNotifications] = useState<NotificationSettings>({
         paymentReminders: true,
         overdueAlerts: true,
         dailySummary: false,
     });
+    const [storageInfo, setStorageInfo] = useState({ size: '0 KB', percentage: 0 });
 
     useEffect(() => {
+        loadSettings();
+        updateStorageInfo();
+    }, []);
+
+    const loadSettings = () => {
         const profile = Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
@@ -44,7 +52,7 @@ export default function SettingsPage() {
 
         setCurrentProfile(profile);
 
-        // Load settings
+        // Load settings with safe defaults
         const savedTheme = Storage.get<string>("theme", "light");
         const savedNotifications = Storage.get<NotificationSettings>("notifications", {
             paymentReminders: true,
@@ -54,7 +62,13 @@ export default function SettingsPage() {
 
         setTheme(savedTheme);
         setNotifications(savedNotifications);
-    }, [router]);
+    };
+
+    const updateStorageInfo = () => {
+        const size = Storage.getSizeFormatted();
+        const percentage = Storage.getUsagePercentage();
+        setStorageInfo({ size, percentage });
+    };
 
     const handleThemeChange = (newTheme: string) => {
         setTheme(newTheme);
@@ -70,19 +84,17 @@ export default function SettingsPage() {
         Storage.save("notifications", updated);
     };
 
-    const handleSwitchProfile = () => {
-        Storage.remove("currentProfile");
-        router.push("/");
-    };
-
     const handleExportData = () => {
         const customers = Storage.get<Customer[]>("customers", []);
         const payments = Storage.get<Payment[]>("payments", []);
+        const profiles = Storage.get<Profile[]>("profiles", []);
 
         const data = {
+            profiles,
             customers,
             payments,
             exportDate: new Date().toISOString(),
+            appVersion: "1.0.0"
         };
 
         const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -94,6 +106,8 @@ export default function SettingsPage() {
         a.download = `ma-installment-backup-${new Date().toISOString().split("T")[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
+
+        alert("Data exported successfully!");
     };
 
     const handleClearData = () => {
@@ -109,6 +123,14 @@ export default function SettingsPage() {
         router.push("/");
     };
 
+    const handleCleanupStorage = () => {
+        if (confirm("Clean up old completed records to free space?")) {
+            Storage.cleanup();
+            updateStorageInfo();
+            alert("Cleanup completed! Old records have been removed.");
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
             {/* Header */}
@@ -121,15 +143,18 @@ export default function SettingsPage() {
                 {/* Profile Section */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <User className="w-5 h-5 text-blue-600" />
-                        Profile
+                        <Briefcase className="w-5 h-5 text-blue-600" />
+                        Profile Management
                     </h3>
                     <button
-                        onClick={handleSwitchProfile}
+                        onClick={() => setShowProfileManager(true)}
                         className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors"
                     >
-                        Switch Profile
+                        Manage Profiles
                     </button>
+                    <p className="text-xs text-gray-500 mt-2 text-center">
+                        Create multiple profiles for different businesses
+                    </p>
                 </div>
 
                 {/* Theme Section */}
@@ -201,6 +226,41 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
+                {/* Storage Info */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Smartphone className="w-5 h-5 text-purple-600" />
+                        Storage Usage
+                    </h3>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">Used Space</span>
+                            <span className="font-semibold">{storageInfo.size}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                                className={`h-2 rounded-full transition-all ${
+                                    storageInfo.percentage > 80 ? 'bg-red-500' :
+                                        storageInfo.percentage > 60 ? 'bg-orange-500' :
+                                            'bg-green-500'
+                                }`}
+                                style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
+                            />
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            {storageInfo.percentage}% of available storage used
+                        </p>
+                        {storageInfo.percentage > 60 && (
+                            <button
+                                onClick={handleCleanupStorage}
+                                className="w-full py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100"
+                            >
+                                Clean Up Old Records
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 {/* Data Management */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -224,6 +284,7 @@ export default function SettingsPage() {
                         </button>
                     </div>
                 </div>
+
                 {/* About */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -259,6 +320,17 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Profile Manager Modal */}
+            {showProfileManager && (
+                <ProfileManager
+                    onClose={() => setShowProfileManager(false)}
+                    onProfilesUpdate={() => {
+                        loadSettings();
+                        updateStorageInfo();
+                    }}
+                />
+            )}
 
             <Navigation currentPage="settings" />
         </div>

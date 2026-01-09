@@ -13,23 +13,31 @@ import ProfileSelector from "@/components/ProfileSelector";
 import { Storage } from "@/lib/storage";
 import { formatCurrency } from "@/lib/utils";
 import type { Profile, Customer } from "@/types";
+import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
+    const router = useRouter();
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [showProfileSelector, setShowProfileSelector] = useState(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
 
     useEffect(() => {
+        loadData();
+    }, []);
+
+    const loadData = () => {
         const profile = Storage.get<Profile | null>("currentProfile", null);
-        const allCustomers = Storage.get<Customer[]>("customers", []);
 
         if (!profile) {
             setShowProfileSelector(true);
-        } else {
-            setCurrentProfile(profile);
-            setCustomers(allCustomers.filter((c) => c.profileId === profile.id));
+            return;
         }
-    }, []);
+
+        setCurrentProfile(profile);
+
+        const allCustomers = Storage.get<Customer[]>("customers", []);
+        setCustomers(allCustomers.filter((c) => c.profileId === profile.id));
+    };
 
     const stats = {
         totalReceived: customers.reduce((sum, c) => sum + c.paidAmount, 0),
@@ -52,6 +60,7 @@ export default function DashboardPage() {
                     setCurrentProfile(profile);
                     Storage.save("currentProfile", profile);
                     setShowProfileSelector(false);
+                    loadData();
                 }}
             />
         );
@@ -119,7 +128,8 @@ export default function DashboardPage() {
                         {customers.slice(0, 5).map((customer) => (
                             <div
                                 key={customer.id}
-                                className="flex items-center justify-between py-2 border-b last:border-0"
+                                onClick={() => router.push(`/customers/${customer.id}`)}
+                                className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded px-2 transition-colors"
                             >
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
@@ -135,6 +145,9 @@ export default function DashboardPage() {
                 </span>
                             </div>
                         ))}
+                        {customers.length === 0 && (
+                            <p className="text-center text-gray-500 py-4">No customers yet</p>
+                        )}
                     </div>
                 </div>
             </div>
