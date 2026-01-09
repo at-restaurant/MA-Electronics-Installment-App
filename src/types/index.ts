@@ -1,69 +1,48 @@
-// src/types/index.ts
-
-export interface Profile {
-    id: number;
-    name: string;
-    description: string;
-    gradient: string;
-    createdAt: string;
+export interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface Customer {
-    id: number;
-    profileId: number;
-    name: string;
-    phone: string;
-    address?: string;
-    cnic?: string;
-    photo?: string | null;
-    document?: string | null;
-    totalAmount: number;
-    paidAmount: number;
-    installmentAmount: number;
-    frequency: 'daily' | 'weekly' | 'monthly';
-    startDate: string;
-    endDate?: string;
-    lastPayment: string;
-    notes?: string;
-    status: 'active' | 'completed' | 'overdue';
-    createdAt: string;
+export interface Installment {
+  id: string;
+  customerId: string;
+  productName: string;
+  totalAmount: number;
+  installmentCount: number;
+  paymentType: 'weekly' | 'bi-weekly' | 'monthly';
+  installmentAmount: number;
+  startDate: string;
+  dueDate: string;
+  paidAmount: number;
+  status: 'active' | 'completed' | 'overdue' | 'pending';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Payment {
-    id: number;
-    customerId: number;
-    amount: number;
-    date: string;
-    createdAt: string;
-    notes?: string;
+  id: string;
+  installmentId: string;
+  customerId: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: 'cash' | 'card' | 'transfer';
+  status: 'completed' | 'pending';
+  createdAt: string;
 }
 
 export interface NotificationSettings {
-    paymentReminders: boolean;
-    overdueAlerts: boolean;
-    dailySummary: boolean;
+  enableNotifications: boolean;
+  notificationTiming: 'before' | 'on' | 'after'; // before, on, or after due date
+  reminderDays: number;
 }
 
 export interface AppSettings {
-    theme: 'light' | 'dark' | 'system';
-    currency: string;
-    language: 'en' | 'ur';
-    notifications: NotificationSettings;
-}
-
-export interface DashboardStats {
-    totalReceived: number;
-    totalExpected: number;
-    totalCustomers: number;
-    activeCustomers: number;
-    completedCustomers: number;
-    overdueCustomers: number;
-    collectionRate: number;
-    pendingAmount: number;
-}
-
-export interface PendingCustomer extends Customer {
-    daysOverdue: number;
-    remaining: number;
-    riskLevel: 'low' | 'medium' | 'high';
+  theme: 'light' | 'dark';
+  notificationSettings: NotificationSettings;
+  offlineSyncPending: boolean;
 }
