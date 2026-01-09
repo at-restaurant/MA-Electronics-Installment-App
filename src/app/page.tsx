@@ -152,7 +152,7 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <Navigation currentPage="dashboard" />
+            <Navigation currentPage="customers" />
         </div>
     );
 }

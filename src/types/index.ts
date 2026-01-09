@@ -1,48 +1,89 @@
-export interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  createdAt: string;
-  updatedAt: string;
+// src/types/index.ts - Fixed and aligned with actual usage
+
+export interface Profile {
+    id: number;
+    name: string;
+    description: string;
+    gradient: string;
+    createdAt: string;
 }
 
-export interface Installment {
-  id: string;
-  customerId: string;
-  productName: string;
-  totalAmount: number;
-  installmentCount: number;
-  paymentType: 'weekly' | 'bi-weekly' | 'monthly';
-  installmentAmount: number;
-  startDate: string;
-  dueDate: string;
-  paidAmount: number;
-  status: 'active' | 'completed' | 'overdue' | 'pending';
-  createdAt: string;
-  updatedAt: string;
+export interface Customer {
+    id: number;
+    profileId: number;
+    name: string;
+    phone: string;
+    address: string;
+    cnic: string;
+    photo: string | null;
+    document: string | null;
+    totalAmount: number;
+    installmentAmount: number;
+    frequency: 'daily' | 'weekly' | 'monthly';
+    startDate: string;
+    endDate: string;
+    notes: string;
+    paidAmount: number;
+    lastPayment: string;
+    status: 'active' | 'completed';
+    createdAt: string;
 }
 
 export interface Payment {
-  id: string;
-  installmentId: string;
-  customerId: string;
-  amount: number;
-  paymentDate: string;
-  paymentMethod: 'cash' | 'card' | 'transfer';
-  status: 'completed' | 'pending';
-  createdAt: string;
+    id: number;
+    customerId: number;
+    amount: number;
+    date: string;
+    createdAt: string;
 }
 
 export interface NotificationSettings {
-  enableNotifications: boolean;
-  notificationTiming: 'before' | 'on' | 'after'; // before, on, or after due date
-  reminderDays: number;
+    enableNotifications: boolean;
+    paymentReminders: boolean;
+    overdueAlerts: boolean;
+    dailySummary: boolean;
 }
 
 export interface AppSettings {
-  theme: 'light' | 'dark';
-  notificationSettings: NotificationSettings;
-  offlineSyncPending: boolean;
+    theme: 'light' | 'dark';
+    notifications: NotificationSettings;
+    language: 'en' | 'ur';
+    currency: 'PKR';
+}
+
+// Installment interface for future use
+export interface Installment {
+    id: string;
+    customerId: number;
+    productName: string;
+    totalAmount: number;
+    installmentCount: number;
+    paymentType: 'daily' | 'weekly' | 'monthly';
+    installmentAmount: number;
+    startDate: string;
+    dueDate: string;
+    paidAmount: number;
+    status: 'active' | 'completed' | 'overdue' | 'pending';
+    createdAt: string;
+    updatedAt: string;
+}
+
+// Statistics interface
+export interface Statistics {
+    totalReceived: number;
+    totalExpected: number;
+    totalCustomers: number;
+    activeCustomers: number;
+    completedCustomers: number;
+    overdueCustomers: number;
+    collectionRate: number;
+}
+
+// Export data structure
+export interface ExportData {
+    profiles: Profile[];
+    customers: Customer[];
+    payments: Payment[];
+    exportDate: string;
+    appVersion: string;
 }

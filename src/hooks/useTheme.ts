@@ -1,24 +1,42 @@
-import { useAppStore } from '@/lib/store';
-import { useEffect } from 'react';
+// src/hooks/useTheme.ts - React hook for theme management
 
-export const useTheme = () => {
-  const { settings, updateTheme } = useAppStore();
+import { useState, useEffect } from 'react';
+import { themeManager, type Theme } from '@/lib/themeManager';
 
-  useEffect(() => {
-    const html = document.documentElement;
-    if (settings.theme === 'dark') {
-      html.classList. add('dark');
-    } else {
-      html.classList.remove('dark');
-    }
-  }, [settings.theme]);
+export function useTheme() {
+    const [theme, setTheme] = useState<Theme>(() => themeManager.getTheme());
+    const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>(() =>
+        themeManager.getCurrentEffectiveTheme()
+    );
 
-  const toggleTheme = () => {
-    updateTheme(settings. theme === 'light' ? 'dark' : 'light');
-  };
+    useEffect(() => {
+        const handleThemeChange = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            setEffectiveTheme(customEvent.detail.theme);
+        };
 
-  return {
-    theme: settings.theme,
-    toggleTheme,
-  };
-};
+        window.addEventListener('theme-changed', handleThemeChange);
+
+        return () => {
+            window.removeEventListener('theme-changed', handleThemeChange);
+        };
+    }, []);
+
+    const setThemeValue = (newTheme: Theme) => {
+        themeManager.setTheme(newTheme);
+        setTheme(newTheme);
+    };
+
+    const toggleTheme = () => {
+        themeManager.toggleTheme();
+        setTheme(themeManager.getTheme());
+    };
+
+    return {
+        theme,
+        effectiveTheme,
+        setTheme: setThemeValue,
+        toggleTheme,
+        isDark: effectiveTheme === 'dark',
+    };
+}
