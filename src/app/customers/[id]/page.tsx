@@ -4,52 +4,29 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
     ArrowLeft, Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
-    TrendingUp, DollarSign, History, FileText, CheckCircle
+    DollarSign, History, FileText, CheckCircle
 } from 'lucide-react';
 import WhatsAppButton from '@/components/WhatsAppButton';
-import { Storage } from '@/lib/storage';
+import LoadingSpinner from '@/components/LoadingSpinner';
+import { useCustomers, usePayments } from '@/hooks/useCustomers';
 import { formatCurrency, formatDate, calculateDaysOverdue } from '@/lib/utils';
-
-interface Customer {
-    id: number;
-    profileId: number;
-    name: string;
-    phone: string;
-    address?: string;
-    cnic?: string;
-    photo?: string | null;
-    document?: string | null;
-    totalAmount: number;
-    paidAmount: number;
-    installmentAmount: number;
-    frequency: string;
-    startDate: string;
-    lastPayment: string;
-    notes?: string;
-    status: string;
-}
-
-interface Payment {
-    id: number;
-    customerId: number;
-    amount: number;
-    date: string;
-    createdAt: string;
-}
+import type { Customer } from '@/types';
 
 export default function CustomerDetailPage() {
     const router = useRouter();
     const params = useParams();
-    const customerId = params.id as string;
+    const customerId = Number(params.id);
+
+    const { getCustomer, deleteCustomer } = useCustomers();
+    const { payments, addPayment } = usePayments(customerId);
 
     const [customer, setCustomer] = useState<Customer | null>(null);
-    const [payments, setPayments] = useState<Payment[]>([]);
     const [showAddPayment, setShowAddPayment] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const found = allCustomers.find((c) => c.id === Number(customerId));
+        const found = getCustomer(customerId);
 
         if (!found) {
             router.push('/customers');
@@ -57,75 +34,68 @@ export default function CustomerDetailPage() {
         }
 
         setCustomer(found);
+        setLoading(false);
+    }, [customerId, router, getCustomer]);
 
-        // Load payment history
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const customerPayments = allPayments.filter((p) => p.customerId === found.id);
-        setPayments(customerPayments);
-    }, [customerId, router]);
-
-    const handleAddPayment = () => {
+    const handleAddPayment = async () => {
         if (!customer) return;
 
-        if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
+        const amount = parseFloat(paymentAmount);
+
+        if (!amount || amount <= 0) {
             alert('Please enter a valid amount');
             return;
         }
 
-        const payment: Payment = {
-            id: Date.now(),
-            customerId: customer.id,
-            amount: parseFloat(paymentAmount),
-            date: new Date().toISOString().split('T')[0],
-            createdAt: new Date().toISOString()
-        };
+        try {
+            const newPayment = addPayment({
+                customerId: customer.id,
+                amount,
+                date: new Date().toISOString().split('T')[0],
+            });
 
-        // Save payment
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        allPayments.push(payment);
-        Storage.save('payments', allPayments);
+            setPaymentAmount('');
+            setShowAddPayment(false);
 
-        // Update customer
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const customerIndex = allCustomers.findIndex((c) => c.id === customer.id);
-        if (customerIndex !== -1) {
-            allCustomers[customerIndex].paidAmount += payment.amount;
-            allCustomers[customerIndex].lastPayment = payment.date;
-            Storage.save('customers', allCustomers);
-            setCustomer(allCustomers[customerIndex]);
-        }
+            // Refresh customer data
+            const updatedCustomer = getCustomer(customerId);
+            if (updatedCustomer) {
+                setCustomer(updatedCustomer);
 
-        setPayments([payment, ...payments]);
-        setPaymentAmount('');
-        setShowAddPayment(false);
-
-        // Check if completed
-        if (allCustomers[customerIndex] && allCustomers[customerIndex].paidAmount >= allCustomers[customerIndex].totalAmount) {
-            if (confirm('Payment completed! Send congratulations message?')) {
-                // WhatsApp completion message will be sent
+                if (updatedCustomer.paidAmount >= updatedCustomer.totalAmount) {
+                    if (confirm('Payment completed! Send congratulations message?')) {
+                        // WhatsApp will handle it
+                    }
+                }
             }
+        } catch (error) {
+            console.error('Error adding payment:', error);
+            alert('Failed to add payment. Please try again.');
         }
     };
 
-    const handleDelete = () => {
+    const handleDelete = async () => {
         if (!customer) return;
 
         if (!confirm('Are you sure you want to delete this customer? This action cannot be undone.')) {
             return;
         }
 
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const filtered = allCustomers.filter((c) => c.id !== customer.id);
-        Storage.save('customers', filtered);
-
-        router.push('/customers');
+        try {
+            deleteCustomer(customer.id);
+            router.push('/customers');
+        } catch (error) {
+            console.error('Error deleting customer:', error);
+            alert('Failed to delete customer.');
+        }
     };
 
-    if (!customer) {
+    if (loading || !customer) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
-                    <p className="text-gray-500">Loading...</p>
+                    <LoadingSpinner size="lg" />
+                    <p className="text-gray-500 mt-4">Loading customer details...</p>
                 </div>
             </div>
         );
@@ -139,12 +109,13 @@ export default function CustomerDetailPage() {
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            <div className="bg-white border-b px-4 py-4 sticky top-0 z-10">
+            <div className="bg-white border-b px-4 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => router.back()}
-                            className="p-2 hover:bg-gray-100 rounded-full"
+                            className="p-2 hover:bg-gray-100 rounded-full transition-colors touch-feedback"
+                            aria-label="Go back"
                         >
                             <ArrowLeft className="w-6 h-6" />
                         </button>
@@ -153,13 +124,15 @@ export default function CustomerDetailPage() {
                     <div className="flex gap-2">
                         <button
                             onClick={() => alert('Edit feature coming soon!')}
-                            className="p-2 hover:bg-gray-100 rounded-full text-blue-600"
+                            className="p-2 hover:bg-gray-100 rounded-full text-blue-600 transition-colors touch-feedback"
+                            aria-label="Edit customer"
                         >
                             <Edit className="w-5 h-5" />
                         </button>
                         <button
                             onClick={handleDelete}
-                            className="p-2 hover:bg-gray-100 rounded-full text-red-600"
+                            className="p-2 hover:bg-gray-100 rounded-full text-red-600 transition-colors touch-feedback"
+                            aria-label="Delete customer"
                         >
                             <Trash2 className="w-5 h-5" />
                         </button>
@@ -169,33 +142,33 @@ export default function CustomerDetailPage() {
 
             <div className="p-4 space-y-4">
                 {/* Customer Info Card */}
-                <div className="bg-white rounded-2xl p-6 shadow-sm">
+                <div className="card fade-in">
                     <div className="flex items-start gap-4 mb-6">
-                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-2xl overflow-hidden">
+                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-2xl overflow-hidden flex-shrink-0">
                             {customer.photo ? (
                                 <img src={customer.photo} alt={customer.name} className="w-full h-full object-cover" />
                             ) : (
-                                customer.name.charAt(0)
+                                customer.name.charAt(0).toUpperCase()
                             )}
                         </div>
-                        <div className="flex-1">
-                            <h2 className="text-2xl font-bold mb-2">{customer.name}</h2>
+                        <div className="flex-1 min-w-0">
+                            <h2 className="text-2xl font-bold mb-2 truncate">{customer.name}</h2>
                             <div className="space-y-1 text-sm text-gray-600">
                                 {customer.phone && (
                                     <div className="flex items-center gap-2">
-                                        <Phone className="w-4 h-4" />
+                                        <Phone className="w-4 h-4 flex-shrink-0" />
                                         <span>{customer.phone}</span>
                                     </div>
                                 )}
                                 {customer.address && (
                                     <div className="flex items-center gap-2">
-                                        <MapPin className="w-4 h-4" />
-                                        <span>{customer.address}</span>
+                                        <MapPin className="w-4 h-4 flex-shrink-0" />
+                                        <span className="truncate">{customer.address}</span>
                                     </div>
                                 )}
                                 {customer.cnic && (
                                     <div className="flex items-center gap-2">
-                                        <CreditCard className="w-4 h-4" />
+                                        <CreditCard className="w-4 h-4 flex-shrink-0" />
                                         <span>{customer.cnic}</span>
                                     </div>
                                 )}
@@ -205,18 +178,18 @@ export default function CustomerDetailPage() {
 
                     {/* Status Badge */}
                     <div className="flex items-center justify-between mb-4">
-            <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-                isCompleted
-                    ? 'bg-green-100 text-green-700'
-                    : daysOverdue > 7
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-blue-100 text-blue-700'
-            }`}>
-              {isCompleted ? '✓ Completed' : daysOverdue > 7 ? '⚠ Overdue' : 'Active'}
-            </span>
+                        <span className={`px-4 py-2 rounded-full text-sm font-medium ${
+                            isCompleted
+                                ? 'bg-green-100 text-green-700'
+                                : daysOverdue > 7
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-blue-100 text-blue-700'
+                        }`}>
+                            {isCompleted ? '✓ Completed' : daysOverdue > 7 ? '⚠ Overdue' : 'Active'}
+                        </span>
                         <span className="text-sm text-gray-500">
-              Started {formatDate(customer.startDate)}
-            </span>
+                            Started {formatDate(customer.startDate)}
+                        </span>
                     </div>
 
                     {/* Progress Bar */}
@@ -257,10 +230,10 @@ export default function CustomerDetailPage() {
                     <button
                         onClick={() => setShowAddPayment(true)}
                         disabled={isCompleted}
-                        className={`py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2 ${
+                        className={`py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
                             isCompleted
                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-blue-600 text-white hover:bg-blue-700 touch-feedback'
                         }`}
                     >
                         <DollarSign className="w-5 h-5" />
@@ -275,7 +248,7 @@ export default function CustomerDetailPage() {
                 </div>
 
                 {/* Installment Info */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="card fade-in">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-blue-600" />
                         Installment Details
@@ -303,10 +276,10 @@ export default function CustomerDetailPage() {
                 </div>
 
                 {/* Payment History */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="card fade-in">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                         <History className="w-5 h-5 text-blue-600" />
-                        Payment History
+                        Payment History ({payments.length})
                     </h3>
                     {payments.length === 0 ? (
                         <p className="text-center text-gray-500 py-8">No payments yet</p>
@@ -315,7 +288,7 @@ export default function CustomerDetailPage() {
                             {payments.map(payment => (
                                 <div key={payment.id} className="flex items-center justify-between py-3 border-b last:border-0">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                                             <CheckCircle className="w-5 h-5 text-green-600" />
                                         </div>
                                         <div>
@@ -331,20 +304,20 @@ export default function CustomerDetailPage() {
 
                 {/* Notes */}
                 {customer.notes && (
-                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                    <div className="card fade-in">
                         <h3 className="font-semibold mb-2 flex items-center gap-2">
                             <FileText className="w-5 h-5 text-blue-600" />
                             Notes
                         </h3>
-                        <p className="text-gray-700">{customer.notes}</p>
+                        <p className="text-gray-700 whitespace-pre-wrap">{customer.notes}</p>
                     </div>
                 )}
             </div>
 
             {/* Add Payment Modal */}
             {showAddPayment && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 fade-in">
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 slide-up">
                         <h3 className="text-xl font-bold mb-4">Add Payment</h3>
                         <div className="space-y-4">
                             <div>
@@ -358,6 +331,8 @@ export default function CustomerDetailPage() {
                                     placeholder={customer.installmentAmount.toString()}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     autoFocus
+                                    min="0"
+                                    step="0.01"
                                 />
                                 <p className="text-sm text-gray-500 mt-1">
                                     Suggested: {formatCurrency(customer.installmentAmount)}
@@ -366,13 +341,13 @@ export default function CustomerDetailPage() {
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setShowAddPayment(false)}
-                                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50"
+                                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors touch-feedback"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     onClick={handleAddPayment}
-                                    className="flex-1 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700"
+                                    className="flex-1 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors touch-feedback"
                                 >
                                     Add Payment
                                 </button>

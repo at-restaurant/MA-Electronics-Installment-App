@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import { Phone } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { Phone } from "lucide-react";
+import Image from "next/image";
+import { formatCurrency } from "@/lib/utils";
 
 interface Customer {
     id: number;
@@ -31,7 +32,13 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md overflow-hidden">
                         {customer.photo ? (
-                            <img src={customer.photo} alt={customer.name} className="w-full h-full object-cover" />
+                            <Image
+                                src={customer.photo}
+                                alt={customer.name}
+                                width={48}
+                                height={48}
+                                className="w-full h-full object-cover"
+                            />
                         ) : (
                             customer.name.charAt(0)
                         )}
@@ -44,12 +51,14 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
                         </p>
                     </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    isCompleted
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-blue-100 text-blue-700'
-                }`}>
-          {isCompleted ? '✓ Complete' : 'Active'}
+                <span
+                    className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        isCompleted
+                            ? "bg-green-100 text-green-700"
+                            : "bg-blue-100 text-blue-700"
+                    }`}
+                >
+          {isCompleted ? "✓ Complete" : "Active"}
         </span>
             </div>
 
@@ -61,17 +70,25 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                     <div
                         className={`h-2.5 rounded-full transition-all ${
-                            isCompleted ? 'bg-green-500' : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                            isCompleted
+                                ? "bg-green-500"
+                                : "bg-gradient-to-r from-blue-500 to-purple-500"
                         }`}
                         style={{ width: `${Math.min(progress, 100)}%` }}
                     />
                 </div>
                 <div className="flex justify-between text-sm pt-2">
           <span className="text-gray-600">
-            Paid: <span className="font-semibold text-green-600">{formatCurrency(customer.paidAmount)}</span>
+            Paid:{" "}
+              <span className="font-semibold text-green-600">
+              {formatCurrency(customer.paidAmount)}
+            </span>
           </span>
                     <span className="text-gray-600">
-            Left: <span className="font-semibold text-orange-600">{formatCurrency(remaining)}</span>
+            Left:{" "}
+                        <span className="font-semibold text-orange-600">
+              {formatCurrency(remaining)}
+            </span>
           </span>
                 </div>
             </div>

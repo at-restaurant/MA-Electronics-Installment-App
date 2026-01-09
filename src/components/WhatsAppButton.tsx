@@ -1,11 +1,20 @@
-'use client';
+"use client";
 
-import { MessageSquare, Send } from 'lucide-react';
-import { WhatsAppService } from '@/lib/whatsapp';
+import { MessageSquare } from "lucide-react";
+import { WhatsAppService } from "@/lib/whatsapp";
+
+interface Customer {
+    name: string;
+    phone: string;
+    totalAmount: number;
+    paidAmount: number;
+    installmentAmount: number;
+    startDate: string;
+}
 
 interface WhatsAppButtonProps {
-    customer: any;
-    type: 'reminder' | 'overdue' | 'welcome' | 'completion';
+    customer: Customer;
+    type: "reminder" | "overdue" | "welcome" | "completion";
     daysOverdue?: number;
     className?: string;
 }
@@ -14,34 +23,35 @@ export default function WhatsAppButton({
                                            customer,
                                            type,
                                            daysOverdue,
-                                           className = ''
+                                           className = "",
                                        }: WhatsAppButtonProps) {
     const handleClick = () => {
         switch (type) {
-            case 'reminder':
+            case "reminder":
                 WhatsAppService.sendPaymentReminder(customer);
                 break;
-            case 'overdue':
+            case "overdue":
                 WhatsAppService.sendOverdueAlert(customer, daysOverdue || 0);
                 break;
-            case 'welcome':
+            case "welcome":
                 WhatsAppService.sendWelcomeMessage(customer);
                 break;
-            case 'completion':
+            case "completion":
                 WhatsAppService.sendCompletionMessage(customer);
                 break;
         }
     };
 
     const buttonText = {
-        reminder: 'Send Reminder',
-        overdue: 'Send Alert',
-        welcome: 'Send Welcome',
-        completion: 'Send Congrats'
+        reminder: "Send Reminder",
+        overdue: "Send Alert",
+        welcome: "Send Welcome",
+        completion: "Send Congrats",
     };
 
     return (
         <button
+            type="button"
             onClick={handleClick}
             className={`flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors ${className}`}
         >

@@ -1,9 +1,18 @@
-import { formatCurrency, formatDate } from './utils';
+import { formatCurrency, formatDate } from "./utils";
+
+interface Customer {
+  name: string;
+  phone: string;
+  totalAmount: number;
+  paidAmount: number;
+  installmentAmount: number;
+  startDate: string;
+}
 
 export const WhatsAppService = {
-    sendPaymentReminder: (customer: any) => {
-        const remaining = customer.totalAmount - customer.paidAmount;
-        const message = `
+  sendPaymentReminder: (customer: Customer) => {
+    const remaining = customer.totalAmount - customer.paidAmount;
+    const message = `
 سلام ${customer.name}! 🙏
 
 یہ آپ کی ادائیگی کی یاد دہانی ہے:
@@ -16,14 +25,14 @@ export const WhatsAppService = {
 MA Installment Management
     `.trim();
 
-        const phone = customer.phone.replace(/[^0-9]/g, '');
-        const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    },
+    const phone = customer.phone.replace(/[^0-9]/g, "");
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank");
+  },
 
-    sendOverdueAlert: (customer: any, daysOverdue: number) => {
-        const remaining = customer.totalAmount - customer.paidAmount;
-        const message = `
+  sendOverdueAlert: (customer: Customer, daysOverdue: number) => {
+    const remaining = customer.totalAmount - customer.paidAmount;
+    const message = `
 ⚠️ ادائیگی کی اہم یاد دہانی
 
 محترم ${customer.name},
@@ -37,13 +46,13 @@ MA Installment Management
 MA Installment Management
     `.trim();
 
-        const phone = customer.phone.replace(/[^0-9]/g, '');
-        const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    },
+    const phone = customer.phone.replace(/[^0-9]/g, "");
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank");
+  },
 
-    sendCompletionMessage: (customer: any) => {
-        const message = `
+  sendCompletionMessage: (customer: Customer) => {
+    const message = `
 🎉 مبارک ہو ${customer.name}!
 
 آپ نے اپنی تمام قسطیں مکمل کر لی ہیں! ✅
@@ -54,13 +63,13 @@ MA Installment Management
 MA Installment Management
     `.trim();
 
-        const phone = customer.phone.replace(/[^0-9]/g, '');
-        const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    },
+    const phone = customer.phone.replace(/[^0-9]/g, "");
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank");
+  },
 
-    sendWelcomeMessage: (customer: any) => {
-        const message = `
+  sendWelcomeMessage: (customer: Customer) => {
+    const message = `
 خوش آمدید ${customer.name}! 👋
 
 آپ کی قسط کی تفصیلات:
@@ -74,8 +83,8 @@ MA Installment Management
 MA Installment Management
     `.trim();
 
-        const phone = customer.phone.replace(/[^0-9]/g, '');
-        const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
-    }
+    const phone = customer.phone.replace(/[^0-9]/g, "");
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank");
+  },
 };
