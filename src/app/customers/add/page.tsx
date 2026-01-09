@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Storage } from "@/lib/storage";
 import { WhatsAppService } from "@/lib/whatsapp";
+import type { Customer } from "@/types";
 
 interface Profile {
     id: number;
@@ -21,7 +22,7 @@ export default function AddCustomerPage() {
         cnic: "",
         totalAmount: "",
         installmentAmount: "",
-        frequency: "daily",
+        frequency: "daily" as const,
         startDate: new Date().toISOString().split("T")[0],
         endDate: "",
         notes: "",
@@ -90,19 +91,28 @@ export default function AddCustomerPage() {
             return;
         }
 
-        const customer = {
+        const customer: Customer = {
             id: Date.now(),
             profileId: profile.id,
-            ...formData,
+            name: formData.name,
+            phone: formData.phone,
+            address: formData.address,
+            cnic: formData.cnic,
+            photo: formData.photo,
+            document: formData.document,
             totalAmount: parseFloat(formData.totalAmount),
             installmentAmount: parseFloat(formData.installmentAmount),
+            frequency: formData.frequency,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            notes: formData.notes,
             paidAmount: 0,
+            lastPayment: formData.startDate,
             status: "active",
             createdAt: new Date().toISOString(),
-            lastPayment: formData.startDate,
         };
 
-        const allCustomers = Storage.get("customers", []);
+        const allCustomers = Storage.get<Customer[]>("customers", []);
         allCustomers.push(customer);
         Storage.save("customers", allCustomers);
 

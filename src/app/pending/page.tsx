@@ -18,30 +18,38 @@ import {
     formatCurrency,
     formatDate,
 } from "@/lib/utils";
+import type { Customer, Profile } from "@/types";
 
-interface PendingCustomer {
-    id: number;
-    name: string;
-    phone: string;
-    photo?: string | null;
-    totalAmount: number;
-    paidAmount: number;
-    installmentAmount: number;
-    lastPayment: string;
+interface PendingCustomer extends Customer {
     daysOverdue: number;
     remaining: number;
-    startDate: string;
 }
 
 export default function PendingPage() {
     const router = useRouter();
-    const [pendingCustomers, setPendingCustomers] = useState<PendingCustomer[]>(
-        [],
-    );
+    const [pendingCustomers, setPendingCustomers] = useState<PendingCustomer[]>([]);
     const [filter, setFilter] = useState<"all" | "overdue" | "warning">("all");
 
+    const loadPendingCustomers = (profileId: number) => {
+        const allCustomers = Storage.get<Customer[]>("customers", []);
+
+        const pending = allCustomers
+            .filter(
+                (c) =>
+                    c.profileId === profileId && c.paidAmount < c.totalAmount,
+            )
+            .map((c) => ({
+                ...c,
+                daysOverdue: calculateDaysOverdue(c.lastPayment),
+                remaining: c.totalAmount - c.paidAmount,
+            }))
+            .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+        setPendingCustomers(pending);
+    };
+
     useEffect(() => {
-        const profile = Storage.get("currentProfile", null);
+        const profile = Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
             return;
@@ -49,27 +57,6 @@ export default function PendingPage() {
 
         loadPendingCustomers(profile.id);
     }, [router]);
-
-    const loadPendingCustomers = (profileId: number) => {
-        const allCustomers = Storage.get("customers", []);
-
-        const pending = allCustomers
-            .filter(
-                (c: PendingCustomer) =>
-                    c.profileId === profileId && c.paidAmount < c.totalAmount,
-            )
-            .map((c: PendingCustomer) => ({
-                ...c,
-                daysOverdue: calculateDaysOverdue(c.lastPayment),
-                remaining: c.totalAmount - c.paidAmount,
-            }))
-            .sort(
-                (a: PendingCustomer, b: PendingCustomer) =>
-                    b.daysOverdue - a.daysOverdue,
-            );
-
-        setPendingCustomers(pending);
-    };
 
     const filteredCustomers = pendingCustomers.filter((customer) => {
         if (filter === "overdue") return customer.daysOverdue > 7;
