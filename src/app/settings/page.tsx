@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx
+// src/app/settings/page.tsx - UPDATED with Category Management
 "use client";
 
 import { useState, useEffect } from "react";
@@ -12,16 +12,18 @@ import {
     Trash2,
     Download,
     Briefcase,
+    Plus,
+    X,
+    Tag,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import ProfileManager from "@/components/ProfileManager";
 import { Storage } from "@/lib/storage";
-import type { Profile, Customer, Payment } from "@/types";
+import type { Profile, NotificationSettings } from "@/types";
 
-interface NotificationSettings {
-    paymentReminders: boolean;
-    overdueAlerts: boolean;
-    dailySummary: boolean;
+interface AppSettings {
+    categories: string[];
+    defaultCategory: string;
 }
 
 export default function SettingsPage() {
@@ -29,11 +31,22 @@ export default function SettingsPage() {
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [showProfileManager, setShowProfileManager] = useState(false);
     const [notifications, setNotifications] = useState<NotificationSettings>({
+        enableNotifications: true,
         paymentReminders: true,
         overdueAlerts: true,
         dailySummary: false,
+        reminderTime: '09:00',
+        soundEnabled: true,
     });
     const [storageInfo, setStorageInfo] = useState({ size: '0 KB', percentage: 0 });
+
+    // ✅ Category Management State
+    const [appSettings, setAppSettings] = useState<AppSettings>({
+        categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
+        defaultCategory: 'Electronics',
+    });
+    const [newCategory, setNewCategory] = useState('');
+    const [showAddCategory, setShowAddCategory] = useState(false);
 
     useEffect(() => {
         loadSettings();
@@ -50,12 +63,21 @@ export default function SettingsPage() {
         setCurrentProfile(profile);
 
         const savedNotifications = Storage.get<NotificationSettings>("notifications", {
+            enableNotifications: true,
             paymentReminders: true,
             overdueAlerts: true,
             dailySummary: false,
+            reminderTime: '09:00',
+            soundEnabled: true,
         });
-
         setNotifications(savedNotifications);
+
+        // Load app settings
+        const savedAppSettings = Storage.get<AppSettings>('app_settings', {
+            categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
+            defaultCategory: 'Electronics',
+        });
+        setAppSettings(savedAppSettings);
     };
 
     const updateStorageInfo = () => {
@@ -73,10 +95,66 @@ export default function SettingsPage() {
         Storage.save("notifications", updated);
     };
 
+    // ✅ Add Category
+    const handleAddCategory = () => {
+        if (!newCategory.trim()) {
+            alert('Please enter category name');
+            return;
+        }
+
+        if (appSettings.categories.includes(newCategory.trim())) {
+            alert('Category already exists');
+            return;
+        }
+
+        const updated = {
+            ...appSettings,
+            categories: [...appSettings.categories, newCategory.trim()],
+        };
+
+        setAppSettings(updated);
+        Storage.save('app_settings', updated);
+        setNewCategory('');
+        setShowAddCategory(false);
+    };
+
+    // ✅ Delete Category
+    const handleDeleteCategory = (category: string) => {
+        if (appSettings.categories.length <= 1) {
+            alert('Cannot delete last category');
+            return;
+        }
+
+        if (!confirm(`Delete category "${category}"?`)) {
+            return;
+        }
+
+        const updated = {
+            ...appSettings,
+            categories: appSettings.categories.filter(c => c !== category),
+            defaultCategory: appSettings.defaultCategory === category
+                ? appSettings.categories.find(c => c !== category) || 'Other'
+                : appSettings.defaultCategory,
+        };
+
+        setAppSettings(updated);
+        Storage.save('app_settings', updated);
+    };
+
+    // ✅ Set Default Category
+    const handleSetDefaultCategory = (category: string) => {
+        const updated = {
+            ...appSettings,
+            defaultCategory: category,
+        };
+        setAppSettings(updated);
+        Storage.save('app_settings', updated);
+    };
+
     const handleExportData = () => {
-        const customers = Storage.get<Customer[]>("customers", []);
-        const payments = Storage.get<Payment[]>("payments", []);
-        const profiles = Storage.get<Profile[]>("profiles", []);
+        const customers = Storage.get("customers", []);
+        const payments = Storage.get("payments", []);
+        const profiles = Storage.get("profiles", []);
 
         const data = {
             profiles,
@@ -100,11 +178,7 @@ export default function SettingsPage() {
     };
 
     const handleClearData = () => {
-        if (
-            !confirm("Are you sure? This will delete ALL data and cannot be undone!")
-        )
-            return;
-
+        if (!confirm("Are you sure? This will delete ALL data and cannot be undone!")) return;
         if (!confirm("Last warning! This action is permanent. Continue?")) return;
 
         Storage.clear();
@@ -144,6 +218,85 @@ export default function SettingsPage() {
                     <p className="text-xs text-gray-500 mt-2 text-center">
                         Create multiple profiles for different businesses
                     </p>
+                </div>
+
+                {/* ✅ Category Management */}
+                <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold flex items-center gap-2">
+                            <Tag className="w-5 h-5 text-purple-600" />
+                            Customer Categories
+                        </h3>
+                        <button
+                            onClick={() => setShowAddCategory(true)}
+                            className="text-sm text-purple-600 font-medium hover:text-purple-700 flex items-center gap-1"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add
+                        </button>
+                    </div>
+
+                    <div className="space-y-2">
+                        {appSettings.categories.map(category => (
+                            <div
+                                key={category}
+                                className="flex items-center justify-between p-3 bg-white rounded-lg"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="radio"
+                                        checked={appSettings.defaultCategory === category}
+                                        onChange={() => handleSetDefaultCategory(category)}
+                                        className="w-4 h-4 text-purple-600"
+                                    />
+                                    <span className="font-medium">{category}</span>
+                                    {appSettings.defaultCategory === category && (
+                                        <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">
+                                            Default
+                                        </span>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => handleDeleteCategory(category)}
+                                    className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                    disabled={appSettings.categories.length <= 1}
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Add Category Form */}
+                    {showAddCategory && (
+                        <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newCategory}
+                                    onChange={(e) => setNewCategory(e.target.value)}
+                                    placeholder="e.g., Bikes"
+                                    className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    autoFocus
+                                />
+                                <button
+                                    onClick={handleAddCategory}
+                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowAddCategory(false);
+                                        setNewCategory('');
+                                    }}
+                                    className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Notifications Section */}
@@ -256,23 +409,6 @@ export default function SettingsPage() {
                         <div className="flex justify-between py-2">
                             <span>App Name</span>
                             <span className="font-medium">MA Installment App</span>
-                        </div>
-                        <div className="flex justify-between py-2">
-                            <span>Developer</span>
-                            <span className="font-medium">Your Company</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Help */}
-                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                    <div className="flex items-start gap-3">
-                        <HelpCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                            <p className="font-medium text-blue-900 mb-1">Need Help?</p>
-                            <p className="text-sm text-blue-700">
-                                Contact support or check our documentation for assistance.
-                            </p>
                         </div>
                     </div>
                 </div>

@@ -1,4 +1,4 @@
-// src/lib/storage.ts - FIXED with all storage keys
+// src/lib/storage.ts - UPDATED with Profile Isolation & Single Default
 
 type StorageKey =
     | 'currentProfile'
@@ -9,12 +9,98 @@ type StorageKey =
     | 'theme'
     | 'notifications'
     | 'language'
-    | 'app_settings'              // ✅ ADDED
-    | 'installment_schedules';    // ✅ ADDED
+    | 'app_settings'
+    | 'installment_schedules';
 
 export const Storage = {
     /**
-     * Save data to localStorage with proper JSON stringification
+     * ✅ Initialize SINGLE default profile (admin creates more)
+     */
+    initializeDefaultProfile: (): void => {
+        if (typeof window === 'undefined') return;
+
+        const profiles = Storage.get<any[]>('profiles', []);
+
+        if (profiles.length === 0) {
+            const defaultProfile = {
+                id: Date.now(),
+                name: "My Business", // ✅ SINGLE default profile
+                description: "Default business account",
+                gradient: "from-blue-500 to-purple-500",
+                createdAt: new Date().toISOString(),
+            };
+
+            Storage.save('profiles', [defaultProfile]);
+            Storage.save('currentProfile', defaultProfile);
+
+            console.log('✅ Default profile created: My Business');
+        }
+    },
+
+    /**
+     * ✅ Get customers for SPECIFIC profile only
+     */
+    getProfileCustomers: (profileId: number) => {
+        const allCustomers = Storage.get<any[]>('customers', []);
+        return allCustomers.filter(c => c.profileId === profileId);
+    },
+
+    /**
+     * ✅ Get payments for SPECIFIC profile only
+     */
+    getProfilePayments: (profileId: number) => {
+        const allCustomers = Storage.getProfileCustomers(profileId);
+        const customerIds = new Set(allCustomers.map(c => c.id));
+
+        const allPayments = Storage.get<any[]>('payments', []);
+        return allPayments.filter(p => customerIds.has(p.customerId));
+    },
+
+    /**
+     * ✅ Delete profile and ALL its data
+     */
+    deleteProfile: (profileId: number): boolean => {
+        try {
+            // Remove profile
+            const profiles = Storage.get<any[]>('profiles', []);
+            const filtered = profiles.filter(p => p.id !== profileId);
+
+            if (filtered.length === 0) {
+                alert('Cannot delete last profile!');
+                return false;
+            }
+
+            Storage.save('profiles', filtered);
+
+            // Remove all customers for this profile
+            const allCustomers = Storage.get<any[]>('customers', []);
+            const customerIds = new Set(
+                allCustomers.filter(c => c.profileId === profileId).map(c => c.id)
+            );
+            const filteredCustomers = allCustomers.filter(c => c.profileId !== profileId);
+            Storage.save('customers', filteredCustomers);
+
+            // Remove all payments for this profile's customers
+            const allPayments = Storage.get<any[]>('payments', []);
+            const filteredPayments = allPayments.filter(p => !customerIds.has(p.customerId));
+            Storage.save('payments', filteredPayments);
+
+            // If current profile is deleted, switch to first available
+            const current = Storage.get('currentProfile', null);
+            if (current && current.id === profileId) {
+                Storage.save('currentProfile', filtered[0]);
+            }
+
+            console.log(`✅ Profile ${profileId} and all its data deleted`);
+            return true;
+        } catch (error) {
+            console.error('Error deleting profile:', error);
+            return false;
+        }
+    },
+
+    /**
+     * Save data to localStorage
      */
     save: <T>(key: StorageKey, data: T): boolean => {
         try {
@@ -50,7 +136,7 @@ export const Storage = {
     },
 
     /**
-     * Get data from localStorage with safe JSON parsing
+     * Get data from localStorage
      */
     get: <T>(key: StorageKey, defaultValue?: T): T => {
         try {
@@ -61,7 +147,7 @@ export const Storage = {
                     return defaultValue as T;
                 }
 
-                // Handle plain string values (like theme)
+                // Handle plain string values
                 if (key === 'theme' && typeof item === 'string' && !item.startsWith('{') && !item.startsWith('[')) {
                     return item as T;
                 }
@@ -81,17 +167,15 @@ export const Storage = {
     },
 
     /**
-     * Remove specific key from localStorage
+     * Remove specific key
      */
     remove: (key: StorageKey): boolean => {
         try {
             if (typeof window !== 'undefined') {
                 localStorage.removeItem(key);
-
                 window.dispatchEvent(new CustomEvent('storage-update', {
                     detail: { key, data: null }
                 }));
-
                 return true;
             }
             return false;
@@ -102,7 +186,7 @@ export const Storage = {
     },
 
     /**
-     * Clear all localStorage data
+     * Clear all data
      */
     clear: (): boolean => {
         try {
@@ -119,7 +203,7 @@ export const Storage = {
     },
 
     /**
-     * Cleanup old data to free space
+     * Cleanup old data PER PROFILE
      */
     cleanup: (): void => {
         try {
@@ -127,57 +211,43 @@ export const Storage = {
 
             console.log('Running storage cleanup...');
 
-            const customers = Storage.get<any[]>('customers', []);
-            const payments = Storage.get<any[]>('payments', []);
+            const profiles = Storage.get<any[]>('profiles', []);
 
-            // Keep only last 50 completed customers
-            const completedCustomers = customers.filter(c => c.status === 'completed');
-            const activeCustomers = customers.filter(c => c.status !== 'completed');
+            // Clean each profile separately
+            profiles.forEach(profile => {
+                const customers = Storage.getProfileCustomers(profile.id);
+                const payments = Storage.getProfilePayments(profile.id);
 
-            let cleanedCustomers = activeCustomers;
+                // Keep only last 50 completed customers per profile
+                const completedCustomers = customers.filter(c => c.status === 'completed');
+                const activeCustomers = customers.filter(c => c.status !== 'completed');
 
-            if (completedCustomers.length > 50) {
-                completedCustomers.sort((a, b) =>
-                    new Date(b.lastPayment).getTime() - new Date(a.lastPayment).getTime()
-                );
+                let cleanedCustomers = activeCustomers;
 
-                const recentCompleted = completedCustomers.slice(0, 50);
-                cleanedCustomers = [...activeCustomers, ...recentCompleted];
+                if (completedCustomers.length > 50) {
+                    completedCustomers.sort((a, b) =>
+                        new Date(b.lastPayment).getTime() - new Date(a.lastPayment).getTime()
+                    );
 
-                console.log(`Removed ${completedCustomers.length - 50} old completed customers`);
-            } else {
-                cleanedCustomers = customers;
-            }
+                    const recentCompleted = completedCustomers.slice(0, 50);
+                    cleanedCustomers = [...activeCustomers, ...recentCompleted];
 
-            const keepCustomerIds = new Set(cleanedCustomers.map(c => c.id));
-            const cleanedPayments = payments.filter(p => keepCustomerIds.has(p.customerId));
-
-            const oneYearAgo = new Date();
-            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-            const finalPayments = cleanedPayments.filter(p => {
-                const customer = cleanedCustomers.find(c => c.id === p.customerId);
-                if (customer && customer.status === 'completed') {
-                    const paymentDate = new Date(p.date);
-                    return paymentDate > oneYearAgo;
+                    console.log(`Profile ${profile.name}: Removed ${completedCustomers.length - 50} old customers`);
                 }
-                return true;
             });
 
-            localStorage.setItem('customers', JSON.stringify(cleanedCustomers));
-            localStorage.setItem('payments', JSON.stringify(finalPayments));
+            // Save cleaned data
+            const allCustomers = Storage.get<any[]>('customers', []);
+            localStorage.setItem('customers', JSON.stringify(allCustomers));
 
-            console.log('Cleanup completed successfully');
-            console.log(`Customers: ${customers.length} -> ${cleanedCustomers.length}`);
-            console.log(`Payments: ${payments.length} -> ${finalPayments.length}`);
-
+            console.log('Cleanup completed');
         } catch (error) {
             console.error('Cleanup error:', error);
         }
     },
 
     /**
-     * Check if a key exists
+     * Check if key exists
      */
     has: (key: StorageKey): boolean => {
         try {
@@ -205,7 +275,7 @@ export const Storage = {
     },
 
     /**
-     * Get storage size in bytes
+     * Get storage size
      */
     getSize: (): number => {
         try {
@@ -225,7 +295,7 @@ export const Storage = {
     },
 
     /**
-     * Get storage size in human-readable format
+     * Get formatted size
      */
     getSizeFormatted: (): string => {
         const bytes = Storage.getSize();
@@ -239,16 +309,16 @@ export const Storage = {
     },
 
     /**
-     * Get storage usage percentage (assuming 5MB limit)
+     * Get usage percentage (5MB limit)
      */
     getUsagePercentage: (): number => {
         const bytes = Storage.getSize();
-        const limitBytes = 5 * 1024 * 1024; // 5MB
+        const limitBytes = 5 * 1024 * 1024;
         return Math.round((bytes / limitBytes) * 100);
     },
 
     /**
-     * Export all data as JSON
+     * Export all data
      */
     exportData: (): string => {
         try {
@@ -273,7 +343,7 @@ export const Storage = {
     },
 
     /**
-     * Import data from JSON
+     * Import data
      */
     importData: (jsonString: string): boolean => {
         try {
@@ -298,7 +368,7 @@ export const Storage = {
     },
 
     /**
-     * Check storage health and run cleanup if needed
+     * Health check
      */
     healthCheck: (): void => {
         const usage = Storage.getUsagePercentage();

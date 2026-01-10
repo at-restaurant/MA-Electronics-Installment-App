@@ -1,7 +1,8 @@
-// src/lib/pdf.ts
+// src/lib/pdf.ts - ENHANCED with Analytics Report
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatCurrency, formatDate } from './utils';
+import { AnalyticsService } from './analytics';
 import type { Customer, Payment } from '@/types';
 
 export const PDFService = {
@@ -110,7 +111,7 @@ export const PDFService = {
         const tableData = payments.map(p => [
             formatDate(p.date),
             formatCurrency(p.amount),
-            p.notes || '-'
+            '-'
         ]);
 
         autoTable(doc, {
@@ -271,5 +272,107 @@ export const PDFService = {
         doc.text('MA Installment Management System', 105, finalY + 15, { align: 'center' });
 
         doc.save(`yearly-report-${year}.pdf`);
+    },
+
+    /**
+     * 🆕 Generate Analytics Report (NEW)
+     */
+    generateAnalyticsReport: (
+        customers: Customer[],
+        payments: Payment[],
+        profileName: string
+    ) => {
+        const doc = new jsPDF();
+
+        // Header
+        doc.setFontSize(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Analytics Report', 105, 20, { align: 'center' });
+
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.text(profileName, 105, 28, { align: 'center' });
+        doc.text(`Generated: ${formatDate(new Date().toISOString())}`, 105, 35, { align: 'center' });
+
+        doc.setLineWidth(0.5);
+        doc.line(20, 40, 190, 40);
+
+        // Key Metrics
+        const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+        const collectionRate = AnalyticsService.getCollectionRate(customers);
+        const overdueStats = AnalyticsService.getOverdueStats(customers);
+        const topCustomers = AnalyticsService.getTopCustomers(customers, 5);
+
+        let yPos = 50;
+
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Key Performance Indicators', 20, yPos);
+        yPos += 10;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Total Revenue: ${formatCurrency(totalRevenue)}`, 20, yPos);
+        yPos += 6;
+        doc.text(`Total Customers: ${customers.length}`, 20, yPos);
+        yPos += 6;
+        doc.text(`Active Customers: ${customers.filter(c => c.status === 'active').length}`, 20, yPos);
+        yPos += 6;
+        doc.text(`Collection Rate: ${collectionRate}%`, 20, yPos);
+        yPos += 6;
+        doc.text(`Overdue Customers: ${overdueStats.count} (${formatCurrency(overdueStats.amount)})`, 20, yPos);
+        yPos += 15;
+
+        // Top Customers Table
+        doc.setFont('helvetica', 'bold');
+        doc.text('Top 5 Customers', 20, yPos);
+        yPos += 5;
+
+        const topCustomersData = topCustomers.map((c, i) => [
+            `#${i + 1}`,
+            c.name,
+            formatCurrency(c.paidAmount),
+            `${Math.round((c.paidAmount / c.totalAmount) * 100)}%`
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Rank', 'Customer', 'Paid Amount', 'Progress']],
+            body: topCustomersData,
+            theme: 'grid',
+            headStyles: { fillColor: [59, 130, 246] },
+            styles: { fontSize: 9 },
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+
+        // Payment Frequency Distribution
+        const frequencyData = AnalyticsService.getCollectionByFrequency(customers);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Payment Frequency Distribution', 20, yPos);
+        yPos += 5;
+
+        const freqTableData = frequencyData.map(f => [
+            f.frequency,
+            f.count.toString(),
+            formatCurrency(f.amount)
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Frequency', 'Customers', 'Total Amount']],
+            body: freqTableData,
+            theme: 'striped',
+            headStyles: { fillColor: [16, 185, 129] },
+            styles: { fontSize: 9 },
+        });
+
+        // Footer
+        const finalY = (doc as any).lastAutoTable.finalY || 250;
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'italic');
+        doc.text('MA Installment Management System - Analytics Report', 105, finalY + 15, { align: 'center' });
+
+        doc.save(`analytics-report-${new Date().toISOString().split('T')[0]}.pdf`);
     }
 };
