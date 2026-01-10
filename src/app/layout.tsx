@@ -4,8 +4,6 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import '@/app/globals.css';
 import { NotificationInitializer } from '@/components/NotificationInitializer';
-import ThemeProvider from '@/components/ThemeProvider';
-
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
@@ -47,10 +45,8 @@ export default function RootLayout({
             <link rel="apple-touch-icon" href="/icon-192x192.png" />
         </head>
         <body className={inter.className}>
-        <ThemeProvider>
             <NotificationInitializer />
             {children}
-        </ThemeProvider>
         <script
             dangerouslySetInnerHTML={{
                 __html: `

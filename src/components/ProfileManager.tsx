@@ -1,8 +1,10 @@
+// src/components/ProfileManager.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Edit2, X, Check } from "lucide-react";
 import { Storage } from "@/lib/storage";
+import { getGradientColor } from "@/lib/utils";
 import type { Profile } from "@/types";
 
 interface ProfileManagerProps {
@@ -38,7 +40,6 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
         const savedProfiles = Storage.get<Profile[]>("profiles", []);
 
         if (savedProfiles.length === 0) {
-            // Create default profile
             const defaultProfiles: Profile[] = [
                 {
                     id: 1,
@@ -100,7 +101,6 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
         Storage.save("profiles", updatedProfiles);
         setProfiles(updatedProfiles);
 
-        // Update current profile if it was edited
         const currentProfile = Storage.get<Profile | null>("currentProfile", null);
         if (currentProfile && currentProfile.id === id) {
             const updated = updatedProfiles.find(p => p.id === id);
@@ -127,13 +127,11 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
         Storage.save("profiles", updatedProfiles);
         setProfiles(updatedProfiles);
 
-        // If deleted profile was current, switch to first available
         const currentProfile = Storage.get<Profile | null>("currentProfile", null);
         if (currentProfile && currentProfile.id === id) {
             Storage.save("currentProfile", updatedProfiles[0]);
         }
 
-        // Delete all customers and payments for this profile
         const allCustomers = Storage.get("customers", []);
         const filteredCustomers = allCustomers.filter((c: any) => c.profileId !== id);
         Storage.save("customers", filteredCustomers);
@@ -141,22 +139,9 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
         onProfilesUpdate();
     };
 
-    const getGradientColor = (gradient: string) => {
-        if (gradient.includes("blue")) return "bg-blue-500";
-        if (gradient.includes("green")) return "bg-green-500";
-        if (gradient.includes("orange")) return "bg-orange-500";
-        if (gradient.includes("purple")) return "bg-purple-500";
-        if (gradient.includes("pink")) return "bg-pink-500";
-        if (gradient.includes("yellow")) return "bg-yellow-500";
-        if (gradient.includes("indigo")) return "bg-indigo-500";
-        if (gradient.includes("cyan")) return "bg-cyan-500";
-        return "bg-gray-500";
-    };
-
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                {/* Header */}
                 <div className="p-6 border-b flex items-center justify-between">
                     <div>
                         <h2 className="text-2xl font-bold">Manage Profiles</h2>
@@ -172,7 +157,6 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
                     </button>
                 </div>
 
-                {/* Profiles List */}
                 <div className="flex-1 overflow-auto p-6 space-y-3">
                     {profiles.map(profile => (
                         <div
@@ -242,7 +226,6 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
                         </div>
                     ))}
 
-                    {/* Add New Profile */}
                     {showAddNew ? (
                         <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
                             <div className="space-y-3">
@@ -292,7 +275,6 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
                     )}
                 </div>
 
-                {/* Footer Info */}
                 <div className="p-4 bg-gray-50 border-t">
                     <p className="text-sm text-gray-600 text-center">
                         💡 Each profile maintains separate customer records

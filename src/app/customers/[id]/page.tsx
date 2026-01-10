@@ -1,3 +1,4 @@
+// src/app/customers/[id]/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -9,7 +10,15 @@ import {
 import WhatsAppButton from '@/components/WhatsAppButton';
 import ProfileSwitcher from '@/components/ProfileSwitcher';
 import { Storage } from '@/lib/storage';
-import { formatCurrency, formatDate, calculateDaysOverdue } from '@/lib/utils';
+import { WhatsAppService } from '@/lib/whatsapp';
+import {
+    formatCurrency,
+    formatDate,
+    calculateDaysOverdue,
+    calculateProgress,
+    getStatusColor,
+    getStatusLabel
+} from '@/lib/utils';
 import type { Customer, Payment, Profile } from '@/types';
 
 export default function CustomerDetailPage() {
@@ -50,7 +59,6 @@ export default function CustomerDetailPage() {
 
         const allPayments = Storage.get<Payment[]>('payments', []);
         const customerPayments = allPayments.filter(p => p.customerId === customerId);
-        // Sort by date descending (most recent first)
         customerPayments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setPayments(customerPayments);
 
@@ -86,7 +94,6 @@ export default function CustomerDetailPage() {
             allPayments.push(newPayment);
             Storage.save('payments', allPayments);
 
-            // Update customer
             const allCustomers = Storage.get<Customer[]>('customers', []);
             const customerIndex = allCustomers.findIndex(c => c.id === customer.id);
 
@@ -100,7 +107,6 @@ export default function CustomerDetailPage() {
 
                 Storage.save('customers', allCustomers);
 
-                // Reload data
                 loadData();
 
                 setPaymentAmount('');
@@ -109,18 +115,7 @@ export default function CustomerDetailPage() {
                 // Check if completed
                 if (allCustomers[customerIndex].paidAmount >= allCustomers[customerIndex].totalAmount) {
                     if (confirm('Payment completed! 🎉 Send congratulations message via WhatsApp?')) {
-                        // WhatsApp will handle it through the button
-                        const message = `🎉 Congratulations ${customer.name}!
-
-You have completed all your installments! ✅
-
-💰 Total Amount: ${formatCurrency(customer.totalAmount)}
-✨ Thank you for your trust!
-
-MA Installment Management`;
-
-                        const phone = customer.phone.replace(/[^0-9]/g, '');
-                        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+                        WhatsAppService.sendCompletionMessage(customer);
                     }
                 }
             }
@@ -138,11 +133,9 @@ MA Installment Management`;
             const payment = allPayments.find(p => p.id === paymentId);
 
             if (payment) {
-                // Remove payment
                 const filteredPayments = allPayments.filter(p => p.id !== paymentId);
                 Storage.save('payments', filteredPayments);
 
-                // Update customer
                 const allCustomers = Storage.get<Customer[]>('customers', []);
                 const customerIndex = allCustomers.findIndex(c => c.id === payment.customerId);
 
@@ -150,7 +143,6 @@ MA Installment Management`;
                     allCustomers[customerIndex].paidAmount -= payment.amount;
                     allCustomers[customerIndex].status = 'active';
 
-                    // Update last payment date
                     const remainingPayments = filteredPayments.filter(p => p.customerId === payment.customerId);
                     if (remainingPayments.length > 0) {
                         remainingPayments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -202,7 +194,7 @@ MA Installment Management`;
         );
     }
 
-    const progress = (customer.paidAmount / customer.totalAmount) * 100;
+    const progress = calculateProgress(customer.paidAmount, customer.totalAmount);
     const remaining = customer.totalAmount - customer.paidAmount;
     const isCompleted = progress >= 100;
     const daysOverdue = calculateDaysOverdue(customer.lastPayment);
@@ -285,14 +277,8 @@ MA Installment Management`;
 
                     {/* Status Badge */}
                     <div className="flex items-center justify-between mb-4">
-                        <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-                            isCompleted
-                                ? 'bg-green-100 text-green-700'
-                                : daysOverdue > 7
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-blue-100 text-blue-700'
-                        }`}>
-                            {isCompleted ? '✓ Completed' : daysOverdue > 7 ? '⚠ Overdue' : 'Active'}
+                        <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(isCompleted, daysOverdue)}`}>
+                            {getStatusLabel(isCompleted, daysOverdue)}
                         </span>
                         <span className="text-sm text-gray-500">
                             Started {formatDate(customer.startDate)}
@@ -303,7 +289,7 @@ MA Installment Management`;
                     <div className="mb-4">
                         <div className="flex justify-between text-sm mb-2">
                             <span className="font-medium">Payment Progress</span>
-                            <span className="font-bold">{Math.round(progress)}%</span>
+                            <span className="font-bold">{progress}%</span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-3">
                             <div

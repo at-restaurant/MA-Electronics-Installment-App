@@ -1,8 +1,10 @@
+// src/components/ProfileSwitcher.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { Storage } from "@/lib/storage";
+import { getGradientColor } from "@/lib/utils";
 import type { Profile } from "@/types";
 
 interface ProfileSwitcherProps {
@@ -21,7 +23,6 @@ export default function ProfileSwitcher({
     useEffect(() => {
         loadProfiles();
 
-        // Close dropdown when clicking outside
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
@@ -36,7 +37,6 @@ export default function ProfileSwitcher({
         const savedProfiles = Storage.get<Profile[]>("profiles", []);
 
         if (savedProfiles.length === 0) {
-            // Create default profiles
             const defaultProfiles: Profile[] = [
                 {
                     id: 1,
@@ -71,20 +71,11 @@ export default function ProfileSwitcher({
         Storage.save("currentProfile", profile);
         setIsOpen(false);
 
-        // Trigger reload/refresh
         if (onProfileChange) {
             onProfileChange();
         } else {
             window.location.reload();
         }
-    };
-
-    const getGradientColor = (gradient: string) => {
-        if (gradient.includes("blue")) return "bg-blue-500";
-        if (gradient.includes("green")) return "bg-green-500";
-        if (gradient.includes("orange")) return "bg-orange-500";
-        if (gradient.includes("purple")) return "bg-purple-500";
-        return "bg-gray-500";
     };
 
     return (

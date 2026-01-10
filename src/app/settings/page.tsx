@@ -1,41 +1,43 @@
-// src/app/settings/page.tsx - CLEAN & WORKING
-
+// src/app/settings/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-    Moon, Sun, Monitor, Globe, Trash2, Download, Upload,
-    Briefcase, AlertCircle, CheckCircle
+    Settings as SettingsIcon,
+    Bell,
+    Smartphone,
+    HelpCircle,
+    Info,
+    Trash2,
+    Download,
+    Briefcase,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import ProfileManager from "@/components/ProfileManager";
 import { Storage } from "@/lib/storage";
-import { themeManager } from "@/lib/themeManager";
-import { useLanguage } from "@/hooks/useLanguage";
-import type { Profile } from "@/types";
+import type { Profile, Customer, Payment } from "@/types";
+
+interface NotificationSettings {
+    paymentReminders: boolean;
+    overdueAlerts: boolean;
+    dailySummary: boolean;
+}
 
 export default function SettingsPage() {
     const router = useRouter();
-    const { language, setLanguage, t, isUrdu } = useLanguage();
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [showProfileManager, setShowProfileManager] = useState(false);
-
-    const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('light');
-    const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light');
+    const [notifications, setNotifications] = useState<NotificationSettings>({
+        paymentReminders: true,
+        overdueAlerts: true,
+        dailySummary: false,
+    });
     const [storageInfo, setStorageInfo] = useState({ size: '0 KB', percentage: 0 });
 
     useEffect(() => {
         loadSettings();
         updateStorageInfo();
-
-        const handleThemeChange = (e: Event) => {
-            const event = e as CustomEvent;
-            setEffectiveTheme(event.detail.effectiveTheme);
-        };
-
-        window.addEventListener('theme-changed', handleThemeChange);
-        return () => window.removeEventListener('theme-changed', handleThemeChange);
     }, []);
 
     const loadSettings = () => {
@@ -44,11 +46,16 @@ export default function SettingsPage() {
             router.push("/");
             return;
         }
+
         setCurrentProfile(profile);
 
-        const savedTheme = themeManager.getTheme();
-        setTheme(savedTheme);
-        setEffectiveTheme(themeManager.getCurrentEffectiveTheme());
+        const savedNotifications = Storage.get<NotificationSettings>("notifications", {
+            paymentReminders: true,
+            overdueAlerts: true,
+            dailySummary: false,
+        });
+
+        setNotifications(savedNotifications);
     };
 
     const updateStorageInfo = () => {
@@ -57,17 +64,24 @@ export default function SettingsPage() {
         setStorageInfo({ size, percentage });
     };
 
-    const handleThemeChange = (newTheme: 'light' | 'dark' | 'auto') => {
-        setTheme(newTheme);
-        themeManager.setTheme(newTheme);
+    const handleNotificationToggle = (key: keyof NotificationSettings) => {
+        const updated = {
+            ...notifications,
+            [key]: !notifications[key],
+        };
+        setNotifications(updated);
+        Storage.save("notifications", updated);
     };
 
     const handleExportData = () => {
+        const customers = Storage.get<Customer[]>("customers", []);
+        const payments = Storage.get<Payment[]>("payments", []);
+        const profiles = Storage.get<Profile[]>("profiles", []);
+
         const data = {
-            profiles: Storage.get("profiles", []),
-            customers: Storage.get("customers", []),
-            payments: Storage.get("payments", []),
-            settings: { theme, language },
+            profiles,
+            customers,
+            payments,
             exportDate: new Date().toISOString(),
             appVersion: "1.0.0"
         };
@@ -78,211 +92,193 @@ export default function SettingsPage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `ma-backup-${new Date().toISOString().split("T")[0]}.json`;
+        a.download = `ma-installment-backup-${new Date().toISOString().split("T")[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
 
-        alert(isUrdu ? "ڈیٹا کامیابی سے برآمد ہو گیا ✅" : "Data exported successfully! ✅");
-    };
-
-    const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const content = event.target?.result as string;
-                const data = JSON.parse(content);
-
-                Storage.save('profiles', data.profiles);
-                Storage.save('customers', data.customers);
-                Storage.save('payments', data.payments);
-
-                if (data.settings?.theme) handleThemeChange(data.settings.theme);
-                if (data.settings?.language) setLanguage(data.settings.language);
-
-                alert(isUrdu ? "ڈیٹا کامیابی سے درآمد ہو گیا! ✅" : "Data imported successfully! ✅");
-                setTimeout(() => window.location.reload(), 1000);
-            } catch (error) {
-                alert(isUrdu ? "ڈیٹا درآمد میں خرابی ❌" : "Import failed ❌");
-            }
-        };
-        reader.readAsText(file);
+        alert("Data exported successfully!");
     };
 
     const handleClearData = () => {
-        const msg1 = isUrdu
-            ? "⚠️ کیا آپ واقعی تمام ڈیٹا حذف کرنا چاہتے ہیں؟"
-            : "⚠️ Delete ALL data? This cannot be undone!";
+        if (
+            !confirm("Are you sure? This will delete ALL data and cannot be undone!")
+        )
+            return;
 
-        const msg2 = isUrdu
-            ? "⚠️ آخری انتباہ! یہ مستقل ہے۔ جاری رکھیں؟"
-            : "⚠️ LAST WARNING! This is PERMANENT. Continue?";
-
-        if (!confirm(msg1)) return;
-        if (!confirm(msg2)) return;
+        if (!confirm("Last warning! This action is permanent. Continue?")) return;
 
         Storage.clear();
-        alert(isUrdu ? "تمام ڈیٹا صاف ہو گیا!" : "All data cleared!");
-        setTimeout(() => router.push("/"), 500);
+        alert("All data cleared successfully");
+        router.push("/");
+    };
+
+    const handleCleanupStorage = () => {
+        if (confirm("Clean up old completed records to free space?")) {
+            Storage.cleanup();
+            updateStorageInfo();
+            alert("Cleanup completed! Old records have been removed.");
+        }
     };
 
     return (
-        <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 ${isUrdu ? 'rtl' : 'ltr'}`}>
+        <div className="min-h-screen bg-white pb-20">
             {/* Header */}
-            <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-4">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {t('settings')}
-                </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    {currentProfile?.name}
-                </p>
+            <div className="bg-white border-b px-4 py-4">
+                <h1 className="text-2xl font-bold">Settings</h1>
+                <p className="text-sm text-gray-600 mt-1">{currentProfile?.name}</p>
             </div>
 
             <div className="p-4 space-y-4">
                 {/* Profile Section */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
+                <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Briefcase className="w-5 h-5 text-blue-600" />
-                        {t('profileManagement')}
+                        Profile Management
                     </h3>
                     <button
                         onClick={() => setShowProfileManager(true)}
-                        className="w-full py-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                        className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors"
                     >
-                        {t('manageProfiles')}
+                        Manage Profiles
                     </button>
-                </div>
-
-                {/* Theme Section */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
-                        <Sun className="w-5 h-5 text-yellow-600" />
-                        {t('appearance')}
-                    </h3>
-                    <div className="grid grid-cols-3 gap-2">
-                        <button
-                            onClick={() => handleThemeChange('light')}
-                            className={`py-3 rounded-lg font-medium transition-all ${
-                                theme === 'light'
-                                    ? "bg-blue-600 text-white shadow-lg scale-105"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200"
-                            }`}
-                        >
-                            <Sun className="w-5 h-5 mx-auto mb-1" />
-                            <span className="text-xs">{t('light')}</span>
-                        </button>
-                        <button
-                            onClick={() => handleThemeChange('dark')}
-                            className={`py-3 rounded-lg font-medium transition-all ${
-                                theme === 'dark'
-                                    ? "bg-blue-600 text-white shadow-lg scale-105"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200"
-                            }`}
-                        >
-                            <Moon className="w-5 h-5 mx-auto mb-1" />
-                            <span className="text-xs">{t('dark')}</span>
-                        </button>
-                        <button
-                            onClick={() => handleThemeChange('auto')}
-                            className={`py-3 rounded-lg font-medium transition-all ${
-                                theme === 'auto'
-                                    ? "bg-blue-600 text-white shadow-lg scale-105"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200"
-                            }`}
-                        >
-                            <Monitor className="w-5 h-5 mx-auto mb-1" />
-                            <span className="text-xs">{t('auto')}</span>
-                        </button>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-                        {isUrdu ? 'موجودہ:' : 'Current:'} {effectiveTheme === 'dark' ? '🌙 ' + t('dark') : '☀️ ' + t('light')}
+                    <p className="text-xs text-gray-500 mt-2 text-center">
+                        Create multiple profiles for different businesses
                     </p>
                 </div>
 
-                {/* Language Section */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
-                        <Globe className="w-5 h-5 text-green-600" />
-                        {t('language')}
+                {/* Notifications Section */}
+                <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Bell className="w-5 h-5 text-green-600" />
+                        Notifications
                     </h3>
-                    <div className="grid grid-cols-2 gap-2">
-                        <button
-                            onClick={() => setLanguage('en')}
-                            className={`py-3 rounded-lg font-medium transition-all ${
-                                language === 'en'
-                                    ? "bg-green-600 text-white shadow-lg scale-105"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200"
-                            }`}
-                        >
-                            🇬🇧 English
-                        </button>
-                        <button
-                            onClick={() => setLanguage('ur')}
-                            className={`py-3 rounded-lg font-medium transition-all ${
-                                language === 'ur'
-                                    ? "bg-green-600 text-white shadow-lg scale-105"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200"
-                            }`}
-                        >
-                            🇵🇰 اردو
-                        </button>
+                    <div className="space-y-3">
+                        <label className="flex items-center justify-between py-2">
+                            <span className="text-sm">Payment Reminders</span>
+                            <input
+                                type="checkbox"
+                                checked={notifications.paymentReminders}
+                                onChange={() => handleNotificationToggle("paymentReminders")}
+                                className="w-5 h-5 text-blue-600 rounded"
+                            />
+                        </label>
+                        <label className="flex items-center justify-between py-2">
+                            <span className="text-sm">Overdue Alerts</span>
+                            <input
+                                type="checkbox"
+                                checked={notifications.overdueAlerts}
+                                onChange={() => handleNotificationToggle("overdueAlerts")}
+                                className="w-5 h-5 text-blue-600 rounded"
+                            />
+                        </label>
+                        <label className="flex items-center justify-between py-2">
+                            <span className="text-sm">Daily Summary</span>
+                            <input
+                                type="checkbox"
+                                checked={notifications.dailySummary}
+                                onChange={() => handleNotificationToggle("dailySummary")}
+                                className="w-5 h-5 text-blue-600 rounded"
+                            />
+                        </label>
                     </div>
                 </div>
 
                 {/* Storage Info */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold text-gray-900 dark:text-white">
-                            {isUrdu ? 'اسٹوریج' : 'Storage'}
-                        </h3>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                            {storageInfo.size} ({storageInfo.percentage}%)
-                        </span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div
-                            className={`h-2 rounded-full ${
-                                storageInfo.percentage > 80 ? 'bg-red-500' : 'bg-blue-500'
-                            }`}
-                            style={{ width: `${storageInfo.percentage}%` }}
-                        />
+                <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Smartphone className="w-5 h-5 text-purple-600" />
+                        Storage Usage
+                    </h3>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">Used Space</span>
+                            <span className="font-semibold">{storageInfo.size}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                                className={`h-2 rounded-full transition-all ${
+                                    storageInfo.percentage > 80 ? 'bg-red-500' :
+                                        storageInfo.percentage > 60 ? 'bg-orange-500' :
+                                            'bg-green-500'
+                                }`}
+                                style={{ width: `${Math.min(storageInfo.percentage, 100)}%` }}
+                            />
+                        </div>
+                        <p className="text-xs text-gray-500">
+                            {storageInfo.percentage}% of available storage used
+                        </p>
+                        {storageInfo.percentage > 60 && (
+                            <button
+                                onClick={handleCleanupStorage}
+                                className="w-full py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100"
+                            >
+                                Clean Up Old Records
+                            </button>
+                        )}
                     </div>
                 </div>
 
                 {/* Data Management */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm space-y-3">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
-                        {t('dataManagement')}
+                <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Smartphone className="w-5 h-5 text-purple-600" />
+                        Data Management
                     </h3>
-                    <button
-                        onClick={handleExportData}
-                        className="w-full py-3 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg font-medium hover:bg-green-100 flex items-center justify-center gap-2"
-                    >
-                        <Download className="w-5 h-5" />
-                        {t('exportData')}
-                    </button>
-                    <label className="w-full py-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg font-medium hover:bg-blue-100 flex items-center justify-center gap-2 cursor-pointer">
-                        <Upload className="w-5 h-5" />
-                        {t('importData')}
-                        <input
-                            type="file"
-                            accept=".json"
-                            onChange={handleImportData}
-                            className="hidden"
-                        />
-                    </label>
-                    <button
-                        onClick={handleClearData}
-                        className="w-full py-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg font-medium hover:bg-red-100 flex items-center justify-center gap-2"
-                    >
-                        <Trash2 className="w-5 h-5" />
-                        {t('clearAllData')}
-                    </button>
+                    <div className="space-y-2">
+                        <button
+                            onClick={handleExportData}
+                            className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Download className="w-4 h-4" />
+                            Export Data (Backup)
+                        </button>
+                        <button
+                            onClick={handleClearData}
+                            className="w-full py-3 bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            Clear All Data
+                        </button>
+                    </div>
+                </div>
+
+                {/* About */}
+                <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Info className="w-5 h-5 text-gray-600" />
+                        About
+                    </h3>
+                    <div className="space-y-2 text-sm text-gray-600">
+                        <div className="flex justify-between py-2">
+                            <span>Version</span>
+                            <span className="font-medium">1.0.0</span>
+                        </div>
+                        <div className="flex justify-between py-2">
+                            <span>App Name</span>
+                            <span className="font-medium">MA Installment App</span>
+                        </div>
+                        <div className="flex justify-between py-2">
+                            <span>Developer</span>
+                            <span className="font-medium">Your Company</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Help */}
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                    <div className="flex items-start gap-3">
+                        <HelpCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <p className="font-medium text-blue-900 mb-1">Need Help?</p>
+                            <p className="text-sm text-blue-700">
+                                Contact support or check our documentation for assistance.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
+            {/* Profile Manager Modal */}
             {showProfileManager && (
                 <ProfileManager
                     onClose={() => setShowProfileManager(false)}
