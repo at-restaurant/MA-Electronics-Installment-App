@@ -1,4 +1,4 @@
-// src/lib/storage.ts - Fixed JSON parsing errors
+// src/lib/storage.ts - FIXED with all storage keys
 
 type StorageKey =
     | 'currentProfile'
@@ -7,7 +7,10 @@ type StorageKey =
     | 'payments'
     | 'settings'
     | 'theme'
-    | 'notifications';
+    | 'notifications'
+    | 'language'
+    | 'app_settings'              // ✅ ADDED
+    | 'installment_schedules';    // ✅ ADDED
 
 export const Storage = {
     /**
@@ -18,15 +21,12 @@ export const Storage = {
             if (typeof window !== 'undefined') {
                 const serialized = JSON.stringify(data);
 
-                // Try to save
                 try {
                     localStorage.setItem(key, serialized);
                 } catch (quotaError) {
-                    // Storage full - run cleanup
                     console.warn('Storage full, running cleanup...');
                     Storage.cleanup();
 
-                    // Try again after cleanup
                     try {
                         localStorage.setItem(key, serialized);
                     } catch (retryError) {
@@ -36,7 +36,6 @@ export const Storage = {
                     }
                 }
 
-                // Dispatch custom event for listeners
                 window.dispatchEvent(new CustomEvent('storage-update', {
                     detail: { key, data }
                 }));
@@ -58,22 +57,18 @@ export const Storage = {
             if (typeof window !== 'undefined') {
                 const item = localStorage.getItem(key);
 
-                // If no item found, return default
                 if (item === null || item === undefined) {
                     return defaultValue as T;
                 }
 
-                // Handle special case for theme (string value)
+                // Handle plain string values (like theme)
                 if (key === 'theme' && typeof item === 'string' && !item.startsWith('{') && !item.startsWith('[')) {
-                    // If it's a plain string like "light" or "dark", return it directly
                     return item as T;
                 }
 
-                // Try to parse as JSON
                 try {
                     return JSON.parse(item) as T;
                 } catch (parseError) {
-                    // If parse fails, check if it's a valid plain string
                     console.warn(`Failed to parse JSON for key "${key}", returning raw value`);
                     return item as T;
                 }
@@ -113,9 +108,7 @@ export const Storage = {
         try {
             if (typeof window !== 'undefined') {
                 localStorage.clear();
-
                 window.dispatchEvent(new CustomEvent('storage-clear'));
-
                 return true;
             }
             return false;
@@ -127,7 +120,6 @@ export const Storage = {
 
     /**
      * Cleanup old data to free space
-     * Removes old completed customers and old payments
      */
     cleanup: (): void => {
         try {
@@ -135,7 +127,6 @@ export const Storage = {
 
             console.log('Running storage cleanup...');
 
-            // Get current data
             const customers = Storage.get<any[]>('customers', []);
             const payments = Storage.get<any[]>('payments', []);
 
@@ -146,12 +137,10 @@ export const Storage = {
             let cleanedCustomers = activeCustomers;
 
             if (completedCustomers.length > 50) {
-                // Sort by completion date (most recent first)
                 completedCustomers.sort((a, b) =>
                     new Date(b.lastPayment).getTime() - new Date(a.lastPayment).getTime()
                 );
 
-                // Keep only last 50 completed
                 const recentCompleted = completedCustomers.slice(0, 50);
                 cleanedCustomers = [...activeCustomers, ...recentCompleted];
 
@@ -160,13 +149,9 @@ export const Storage = {
                 cleanedCustomers = customers;
             }
 
-            // Get IDs of customers we're keeping
             const keepCustomerIds = new Set(cleanedCustomers.map(c => c.id));
-
-            // Remove payments for deleted customers
             const cleanedPayments = payments.filter(p => keepCustomerIds.has(p.customerId));
 
-            // Remove very old payments (older than 1 year) for completed customers
             const oneYearAgo = new Date();
             oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
@@ -179,7 +164,6 @@ export const Storage = {
                 return true;
             });
 
-            // Save cleaned data
             localStorage.setItem('customers', JSON.stringify(cleanedCustomers));
             localStorage.setItem('payments', JSON.stringify(finalPayments));
 
@@ -275,7 +259,6 @@ export const Storage = {
                         try {
                             data[key] = JSON.parse(localStorage[key]);
                         } catch {
-                            // If it's not JSON, store as string
                             data[key] = localStorage[key];
                         }
                     }
@@ -298,7 +281,6 @@ export const Storage = {
                 const data = JSON.parse(jsonString);
                 for (const key in data) {
                     if (data.hasOwnProperty(key)) {
-                        // Properly stringify objects/arrays, keep strings as is
                         if (typeof data[key] === 'object') {
                             localStorage.setItem(key, JSON.stringify(data[key]));
                         } else {

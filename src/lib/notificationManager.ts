@@ -1,4 +1,4 @@
-// src/lib/notificationManager.ts - Integrated notification system
+// src/lib/notificationManager.ts - FIXED with complete default values
 
 import { Storage } from './storage';
 import { formatCurrency, calculateDaysOverdue } from './utils';
@@ -10,11 +10,14 @@ export class NotificationManager {
     private settings: NotificationSettings;
 
     private constructor() {
+        // ✅ FIX: Complete default values matching NotificationSettings type
         this.settings = Storage.get<NotificationSettings>('notifications', {
             enableNotifications: true,
             paymentReminders: true,
             overdueAlerts: true,
             dailySummary: false,
+            reminderTime: '09:00',      // ✅ ADDED
+            soundEnabled: true,         // ✅ ADDED
         });
 
         if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -97,7 +100,6 @@ export class NotificationManager {
 
             const daysOverdue = calculateDaysOverdue(customer.lastPayment);
 
-            // Check if payment is due today (for daily frequency)
             if (customer.frequency === 'daily' && daysOverdue >= 1) {
                 await this.sendNotification(
                     `Payment Due: ${customer.name}`,
@@ -121,7 +123,6 @@ export class NotificationManager {
 
             const daysOverdue = calculateDaysOverdue(customer.lastPayment);
 
-            // Alert for customers overdue by more than 7 days
             if (daysOverdue > 7) {
                 await this.sendNotification(
                     `⚠️ Overdue Payment: ${customer.name}`,
@@ -129,7 +130,6 @@ export class NotificationManager {
                         body: `Payment is ${daysOverdue} days overdue. Amount: ${formatCurrency(customer.installmentAmount)}`,
                         tag: `overdue-${customer.id}`,
                         requireInteraction: true,
-                        vibrate: [200, 100, 200],
                     }
                 );
             }
@@ -184,14 +184,12 @@ export class NotificationManager {
 
         setTimeout(() => {
             this.sendDailySummary();
-            // Repeat daily
             setInterval(() => {
                 this.sendDailySummary();
             }, 24 * 60 * 60 * 1000);
         }, timeUntilSummary);
     }
 
-    // Trigger specific notification types
     async notifyPaymentReceived(customerName: string, amount: number): Promise<void> {
         await this.sendNotification(
             '✅ Payment Received',
@@ -225,5 +223,4 @@ export class NotificationManager {
     }
 }
 
-// Export singleton instance
 export const notificationManager = NotificationManager.getInstance();

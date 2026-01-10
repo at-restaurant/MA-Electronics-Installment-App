@@ -1,4 +1,4 @@
-// src/types/index.ts - Fixed and aligned with actual usage
+// src/types/index.ts - COMPLETE with all required types
 
 export interface Profile {
     id: number;
@@ -27,6 +27,12 @@ export interface Customer {
     lastPayment: string;
     status: 'active' | 'completed';
     createdAt: string;
+
+    // Optional new fields
+    autoMessaging?: boolean;
+    category?: string;
+    tags?: string[];
+    autoSchedule?: boolean;
 }
 
 export interface Payment {
@@ -35,6 +41,7 @@ export interface Payment {
     amount: number;
     date: string;
     createdAt: string;
+    scheduleId?: number;
 }
 
 export interface NotificationSettings {
@@ -42,16 +49,68 @@ export interface NotificationSettings {
     paymentReminders: boolean;
     overdueAlerts: boolean;
     dailySummary: boolean;
+    reminderTime: string;        // e.g., "09:00"
+    soundEnabled: boolean;
 }
 
 export interface AppSettings {
-    theme: 'light' | 'dark';
+    theme: 'light' | 'dark' | 'auto';
     notifications: NotificationSettings;
     language: 'en' | 'ur';
     currency: 'PKR';
+    defaultCategory?: string;
+    categories?: string[];
 }
 
-// Installment interface for future use
+export interface InstallmentSchedule {
+    id: number;
+    customerId: number;
+    installmentNumber: number;
+    dueDate: string;
+    amount: number;
+    status: 'pending' | 'paid' | 'overdue';
+    paidDate?: string;
+    createdAt: string;
+}
+
+export interface Statistics {
+    totalReceived: number;
+    totalExpected: number;
+    totalCustomers: number;
+    activeCustomers: number;
+    completedCustomers: number;
+    overdueCustomers: number;
+    collectionRate: number;
+    byCategory?: Record<string, {
+        customers: number;
+        totalAmount: number;
+        paidAmount: number;
+    }>;
+}
+
+export interface ExportData {
+    profiles: Profile[];
+    customers: Customer[];
+    payments: Payment[];
+    schedules?: InstallmentSchedule[];
+    settings?: AppSettings;
+    exportDate: string;
+    appVersion: string;
+}
+
+export interface FilterState {
+    search: string;
+    status: 'all' | 'active' | 'completed' | 'overdue';
+    category: string;
+    frequency: 'all' | 'daily' | 'weekly' | 'monthly';
+    tags: string[];
+    dateRange?: {
+        start: string;
+        end: string;
+    };
+}
+
+// Installment interface (for future use)
 export interface Installment {
     id: string;
     customerId: number;
@@ -66,24 +125,4 @@ export interface Installment {
     status: 'active' | 'completed' | 'overdue' | 'pending';
     createdAt: string;
     updatedAt: string;
-}
-
-// Statistics interface
-export interface Statistics {
-    totalReceived: number;
-    totalExpected: number;
-    totalCustomers: number;
-    activeCustomers: number;
-    completedCustomers: number;
-    overdueCustomers: number;
-    collectionRate: number;
-}
-
-// Export data structure
-export interface ExportData {
-    profiles: Profile[];
-    customers: Customer[];
-    payments: Payment[];
-    exportDate: string;
-    appVersion: string;
 }

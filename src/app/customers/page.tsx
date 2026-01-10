@@ -1,11 +1,14 @@
+// src/app/customers/page.tsx - Updated with FilterBar component
+
 "use client";
 
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import CustomerCard from "@/components/CustomerCard";
 import Navigation from "@/components/Navigation";
 import ProfileSwitcher from "@/components/ProfileSwitcher";
+import FilterBar from "@/components/FilterBar";
 import { Storage } from "@/lib/storage";
 import type { Customer, Profile } from "@/types";
 
@@ -15,11 +18,11 @@ export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [filterType, setFilterType] = useState("all");
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [categories, setCategories] = useState<string[]>([]);
 
     useEffect(() => {
         loadData();
-
-        // Run storage health check
         Storage.healthCheck();
     }, []);
 
@@ -34,17 +37,43 @@ export default function CustomersPage() {
 
         const allCustomers = Storage.get<Customer[]>("customers", []);
         setCustomers(allCustomers.filter((c) => c.profileId === profile.id));
+
+        // Load categories
+        const appSettings = Storage.get('app_settings', {
+            categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other']
+        });
+        setCategories(appSettings.categories || []);
+    };
+
+    const handleCategoryToggle = (categoryId: string, optionId: string) => {
+        const key = `${categoryId}:${optionId}`;
+        setSelectedCategories(prev =>
+            prev.includes(key)
+                ? prev.filter(c => c !== key)
+                : [...prev, key]
+        );
     };
 
     const filteredCustomers = customers.filter((c) => {
+        // Search filter
         const matchesSearch =
             c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             c.phone.includes(searchQuery);
-        const matchesFilter =
+
+        // Status filter
+        const matchesStatus =
             filterType === "all" ||
             (filterType === "active" && c.paidAmount < c.totalAmount) ||
             (filterType === "completed" && c.paidAmount >= c.totalAmount);
-        return matchesSearch && matchesFilter;
+
+        // Category filter
+        const matchesCategory = selectedCategories.length === 0 ||
+            selectedCategories.some(cat => {
+                const [, option] = cat.split(':');
+                return c.category === option;
+            });
+
+        return matchesSearch && matchesStatus && matchesCategory;
     });
 
     const activeCount = customers.filter(c => c.paidAmount < c.totalAmount).length;
@@ -52,23 +81,23 @@ export default function CustomersPage() {
 
     if (!currentProfile) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Loading...</p>
+                    <p className="text-gray-600 dark:text-gray-400">Loading...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 transition-colors">
             {/* Header */}
-            <div className="bg-white border-b px-4 py-4 sticky top-0 z-10 shadow-sm">
+            <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-4 sticky top-0 z-10 shadow-sm transition-colors">
                 <div className="flex justify-between items-center mb-4">
                     <div>
-                        <h1 className="text-2xl font-bold">Customers</h1>
-                        <p className="text-sm text-gray-500">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Customers</h1>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
                             {customers.length} total • {activeCount} active • {completedCount} completed
                         </p>
                     </div>
@@ -78,52 +107,44 @@ export default function CustomersPage() {
                     />
                 </div>
 
-                {/* Search */}
-                <div className="relative mb-3">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                        type="text"
-                        placeholder="Search customers..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                </div>
-
-                {/* Filters */}
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                    {[
+                {/* Filter Bar */}
+                <FilterBar
+                    searchPlaceholder="Search customers..."
+                    searchValue={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    filters={[
                         { id: "all", label: "All", count: customers.length },
                         { id: "active", label: "Active", count: activeCount },
                         { id: "completed", label: "Completed", count: completedCount }
-                    ].map((filter) => (
-                        <button
-                            key={filter.id}
-                            type="button"
-                            onClick={() => setFilterType(filter.id)}
-                            className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                                filterType === filter.id
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                            }`}
-                        >
-                            {filter.label} ({filter.count})
-                        </button>
-                    ))}
-                </div>
+                    ]}
+                    activeFilter={filterType}
+                    onFilterChange={setFilterType}
+                    categories={[
+                        {
+                            id: 'category',
+                            label: 'Product Category',
+                            options: categories
+                        }
+                    ]}
+                    activeCategories={selectedCategories}
+                    onCategoryChange={handleCategoryToggle}
+                    showCategories={true}
+                />
             </div>
 
             {/* Customer List */}
             <div className="p-4 space-y-4">
                 {filteredCustomers.length === 0 ? (
                     <div className="text-center py-12">
-                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Search className="w-10 h-10 text-gray-400" />
+                        <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Plus className="w-10 h-10 text-gray-400" />
                         </div>
-                        <p className="text-gray-500 mb-2">
-                            {searchQuery ? "No customers found" : "No customers yet"}
+                        <p className="text-gray-500 dark:text-gray-400 mb-2">
+                            {searchQuery || selectedCategories.length > 0
+                                ? "No customers found"
+                                : "No customers yet"}
                         </p>
-                        {!searchQuery && (
+                        {!searchQuery && selectedCategories.length === 0 && (
                             <button
                                 type="button"
                                 onClick={() => router.push("/customers/add")}
@@ -134,13 +155,27 @@ export default function CustomersPage() {
                         )}
                     </div>
                 ) : (
-                    filteredCustomers.map((customer) => (
-                        <CustomerCard
-                            key={customer.id}
-                            customer={customer}
-                            onClick={(c) => router.push(`/customers/${c.id}`)}
-                        />
-                    ))
+                    <>
+                        {/* Results Count */}
+                        {(searchQuery || selectedCategories.length > 0) && (
+                            <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-3 border border-blue-200 dark:border-blue-800">
+                                <p className="text-sm text-blue-800 dark:text-blue-300">
+                                    Found {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''}
+                                    {searchQuery && ` matching "${searchQuery}"`}
+                                    {selectedCategories.length > 0 && ` in selected categories`}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Customer Cards */}
+                        {filteredCustomers.map((customer) => (
+                            <CustomerCard
+                                key={customer.id}
+                                customer={customer}
+                                onClick={(c) => router.push(`/customers/${c.id}`)}
+                            />
+                        ))}
+                    </>
                 )}
             </div>
 

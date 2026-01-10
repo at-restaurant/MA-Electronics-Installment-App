@@ -1,9 +1,12 @@
+// src/app/daily/page.tsx - Updated with FilterBar
+
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, CheckCircle, Circle, DollarSign, Users } from "lucide-react";
 import Navigation from "@/components/Navigation";
+import FilterBar from "@/components/FilterBar";
 import { Storage } from "@/lib/storage";
 import { formatCurrency } from "@/lib/utils";
 import type { Customer, Payment, Profile } from "@/types";
@@ -15,11 +18,14 @@ export default function DailyPage() {
     const [selectedDate, setSelectedDate] = useState(
         new Date().toISOString().split("T")[0],
     );
-    const [todayPayments, setTodayPayments] = useState<Record<number, boolean>>(
-        {},
-    );
-
+    const [todayPayments, setTodayPayments] = useState<Record<number, boolean>>({});
     const [processing, setProcessing] = useState(false);
+
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState("");
+    const [filterType, setFilterType] = useState("all");
+    const [categories, setCategories] = useState<string[]>([]);
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
     useEffect(() => {
         const profile = Storage.get<Profile | null>("currentProfile", null);
@@ -31,6 +37,12 @@ export default function DailyPage() {
         setCurrentProfile(profile);
         loadCustomers(profile.id);
         loadTodayPayments(profile.id);
+
+        // Load categories
+        const appSettings = Storage.get<any>('app_settings', {
+            categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances']
+        });
+        setCategories(appSettings.categories || []);
     }, [router, selectedDate]);
 
     const loadCustomers = (profileId: number) => {
@@ -67,15 +79,12 @@ export default function DailyPage() {
             const isAlreadyPaid = todayPayments[customer.id];
 
             if (isAlreadyPaid) {
-                // Remove payment
                 const allPayments = Storage.get<Payment[]>("payments", []);
                 const filtered = allPayments.filter(
-                    (p) =>
-                        !(p.customerId === customer.id && p.date === selectedDate),
+                    (p) => !(p.customerId === customer.id && p.date === selectedDate),
                 );
                 Storage.save("payments", filtered);
 
-                // Update customer
                 const allCustomers = Storage.get<Customer[]>("customers", []);
                 const customerIndex = allCustomers.findIndex(
                     (c) => c.id === customer.id,
@@ -91,7 +100,6 @@ export default function DailyPage() {
                     return newState;
                 });
             } else {
-                // Add payment
                 const payment: Payment = {
                     id: Date.now(),
                     customerId: customer.id,
@@ -104,7 +112,6 @@ export default function DailyPage() {
                 allPayments.push(payment);
                 Storage.save("payments", allPayments);
 
-                // Update customer
                 const allCustomers = Storage.get<Customer[]>("customers", []);
                 const customerIndex = allCustomers.findIndex(
                     (c) => c.id === customer.id,
@@ -114,7 +121,6 @@ export default function DailyPage() {
                     allCustomers[customerIndex].lastPayment = selectedDate;
                     Storage.save("customers", allCustomers);
 
-                    // Reload customers to update the list
                     if (currentProfile) {
                         loadCustomers(currentProfile.id);
                     }
@@ -130,30 +136,84 @@ export default function DailyPage() {
         }
     };
 
+    const handleCategoryToggle = (categoryId: string, optionId: string) => {
+        const key = `${categoryId}:${optionId}`;
+        setSelectedCategories(prev =>
+            prev.includes(key)
+                ? prev.filter(c => c !== key)
+                : [...prev, key]
+        );
+    };
+
+    // Filter customers
+    const filteredCustomers = customers.filter((c) => {
+        const matchesSearch =
+            c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.phone.includes(searchQuery);
+
+        const matchesStatus =
+            filterType === "all" ||
+            (filterType === "paid" && todayPayments[c.id]) ||
+            (filterType === "unpaid" && !todayPayments[c.id]);
+
+        const matchesCategory = selectedCategories.length === 0 ||
+            selectedCategories.some(cat => {
+                const [, option] = cat.split(':');
+                return c.category === option;
+            });
+
+        return matchesSearch && matchesStatus && matchesCategory;
+    });
+
     const collectedToday = customers
         .filter((c) => todayPayments[c.id])
         .reduce((sum, c) => sum + c.installmentAmount, 0);
 
     const paidCount = Object.keys(todayPayments).length;
     const totalCount = customers.length;
+    const unpaidCount = totalCount - paidCount;
 
     return (
-        <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 transition-colors duration-200">
             {/* Header */}
-            <div className="bg-white border-b px-4 py-4">
-                <h1 className="text-2xl font-bold mb-3">Daily Collection</h1>
+            <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-4 transition-colors duration-200">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">Daily Collection</h1>
 
                 {/* Date Selector */}
-                <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl">
-                    <Calendar className="w-5 h-5 text-gray-600" />
+                <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700 p-3 rounded-xl mb-3 transition-colors duration-200">
+                    <Calendar className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                     <input
                         type="date"
                         value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
                         max={new Date().toISOString().split("T")[0]}
-                        className="flex-1 bg-transparent border-0 font-medium focus:outline-none"
+                        className="flex-1 bg-transparent border-0 font-medium focus:outline-none text-gray-900 dark:text-white"
                     />
                 </div>
+
+                {/* FilterBar */}
+                <FilterBar
+                    searchPlaceholder="Search customers..."
+                    searchValue={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    filters={[
+                        { id: "all", label: "All", count: totalCount },
+                        { id: "paid", label: "Paid", count: paidCount },
+                        { id: "unpaid", label: "Unpaid", count: unpaidCount }
+                    ]}
+                    activeFilter={filterType}
+                    onFilterChange={setFilterType}
+                    categories={[
+                        {
+                            id: 'category',
+                            label: 'Category',
+                            options: categories
+                        }
+                    ]}
+                    activeCategories={selectedCategories}
+                    onCategoryChange={handleCategoryToggle}
+                    showCategories={true}
+                />
             </div>
 
             <div className="p-4 space-y-4">
@@ -177,15 +237,14 @@ export default function DailyPage() {
                             <span className="text-sm">Customers Paid</span>
                         </div>
                         <span className="font-bold">
-              {paidCount} / {totalCount}
-            </span>
+                            {paidCount} / {totalCount}
+                        </span>
                     </div>
 
-                    {/* Progress Bar */}
                     <div className="mt-3">
                         <div className="w-full bg-white/20 rounded-full h-2">
                             <div
-                                className="bg-white h-2 rounded-full transition-all"
+                                className="bg-white h-2 rounded-full transition-all duration-300"
                                 style={{
                                     width: `${totalCount > 0 ? (paidCount / totalCount) * 100 : 0}%`,
                                 }}
@@ -196,16 +255,22 @@ export default function DailyPage() {
 
                 {/* Customer List */}
                 <div className="space-y-3">
-                    {customers.length === 0 ? (
-                        <div className="bg-white rounded-2xl p-8 text-center">
-                            <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                            <p className="text-gray-600 mb-2">No daily customers found</p>
-                            <p className="text-sm text-gray-400">
-                                Add customers with daily payment frequency to see them here
+                    {filteredCustomers.length === 0 ? (
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 text-center transition-colors duration-200">
+                            <Calendar className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                            <p className="text-gray-600 dark:text-gray-400 mb-2">
+                                {searchQuery || selectedCategories.length > 0
+                                    ? "No customers found"
+                                    : "No daily customers found"}
+                            </p>
+                            <p className="text-sm text-gray-400 dark:text-gray-500">
+                                {searchQuery || selectedCategories.length > 0
+                                    ? "Try adjusting your filters"
+                                    : "Add customers with daily payment frequency to see them here"}
                             </p>
                         </div>
                     ) : (
-                        customers.map((customer) => {
+                        filteredCustomers.map((customer) => {
                             const isPaid = todayPayments[customer.id];
                             const remaining = customer.totalAmount - customer.paidAmount;
 
@@ -213,20 +278,19 @@ export default function DailyPage() {
                                 <div
                                     key={customer.id}
                                     onClick={() => togglePayment(customer)}
-                                    className={`bg-white rounded-2xl p-4 shadow-sm cursor-pointer transition-all active:scale-[0.98] ${
+                                    className={`bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm cursor-pointer transition-all active:scale-[0.98] duration-200 ${
                                         isPaid
-                                            ? "ring-2 ring-green-500 bg-green-50"
+                                            ? "ring-2 ring-green-500 bg-green-50 dark:bg-green-900/20"
                                             : "hover:shadow-md"
                                     } ${processing ? "opacity-50 pointer-events-none" : ""}`}
                                 >
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3 flex-1">
-                                            {/* Checkbox */}
                                             <div
-                                                className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                                                className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 ${
                                                     isPaid
                                                         ? "bg-green-500 text-white shadow-lg"
-                                                        : "bg-gray-100 text-gray-400"
+                                                        : "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500"
                                                 }`}
                                             >
                                                 {isPaid ? (
@@ -236,28 +300,26 @@ export default function DailyPage() {
                                                 )}
                                             </div>
 
-                                            {/* Customer Info */}
                                             <div className="flex-1 min-w-0">
-                                                <h3 className="font-semibold text-gray-900 truncate">
+                                                <h3 className="font-semibold text-gray-900 dark:text-white truncate">
                                                     {customer.name}
                                                 </h3>
-                                                <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
-                          <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            Due: {formatCurrency(customer.installmentAmount)}
-                          </span>
+                                                <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                                    <span className="flex items-center gap-1">
+                                                        <DollarSign className="w-3 h-3" />
+                                                        Due: {formatCurrency(customer.installmentAmount)}
+                                                    </span>
                                                     <span>•</span>
                                                     <span>Left: {formatCurrency(remaining)}</span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Status Badge */}
                                         {isPaid && (
                                             <div className="flex-shrink-0 ml-2">
-                        <span className="px-3 py-1 bg-green-500 text-white text-xs font-medium rounded-full">
-                          ✓ Paid
-                        </span>
+                                                <span className="px-3 py-1 bg-green-500 text-white text-xs font-medium rounded-full">
+                                                    ✓ Paid
+                                                </span>
                                             </div>
                                         )}
                                     </div>
@@ -268,9 +330,9 @@ export default function DailyPage() {
                 </div>
 
                 {/* Summary Note */}
-                {customers.length > 0 && (
-                    <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                        <p className="text-sm text-blue-800">
+                {filteredCustomers.length > 0 && (
+                    <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-4 border border-blue-200 dark:border-blue-800 transition-colors duration-200">
+                        <p className="text-sm text-blue-800 dark:text-blue-300">
                             💡 <strong>Tip:</strong> Tap on customer cards to mark payments.
                             You can undo by tapping again.
                         </p>
