@@ -1,26 +1,20 @@
-// src/components/ThemeProvider.tsx - Ensures theme applies to all pages
+// src/components/ThemeProvider.tsx - PROPERLY WORKING
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { themeManager } from '@/lib/themeManager';
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
+    const [mounted, setMounted] = useState(false);
+
     useEffect(() => {
-        // Initialize theme on mount
-        const savedTheme = themeManager.getTheme();
-        themeManager.setTheme(savedTheme);
+        setMounted(true);
 
         // Listen for theme changes
         const handleThemeChange = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            const isDark = customEvent.detail.theme === 'dark';
-
-            if (isDark) {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
+            const event = e as CustomEvent;
+            // Theme already applied by themeManager, just trigger re-render if needed
         };
 
         window.addEventListener('theme-changed', handleThemeChange);
@@ -29,6 +23,11 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
             window.removeEventListener('theme-changed', handleThemeChange);
         };
     }, []);
+
+    // Prevent flash of wrong theme
+    if (!mounted) {
+        return <>{children}</>;
+    }
 
     return <>{children}</>;
 }

@@ -2,9 +2,9 @@
 
 :root {
     --background: #ffffff;
-    --foreground: #000000;
+    --foreground: #111827;
     --card: #ffffff;
-    --card-foreground: #000000;
+    --card-foreground: #111827;
     --primary: #0284c7;
     --primary-foreground: #ffffff;
 }
@@ -25,17 +25,21 @@ html {
 body {
     background: var(--background);
     color: var(--foreground);
-    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Smooth transitions for dark mode */
-* {
-    transition-property: background-color, border-color, color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
+/* Remove automatic transitions that cause issues */
+.dark body {
+    background-color: #111827;
+    color: #f9fafb;
 }
 
-/* Custom scrollbar for dark mode */
+/* Light mode specific */
+html:not(.dark) body {
+    background-color: #f9fafb;
+    color: #111827;
+}
+
+/* Custom scrollbar */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -55,10 +59,6 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
     background: #6b7280;
 }
 
@@ -136,4 +136,14 @@ body {
 .dark ::selection {
     background-color: #0ea5e9;
     color: white;
+}
+
+/* Hide scrollbar on category filters */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }

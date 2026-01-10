@@ -1,4 +1,4 @@
-// src/lib/themeManager.ts - Complete theme management with proper initialization
+// src/lib/themeManager.ts - FIXED THEME SYSTEM
 
 import { Storage } from './storage';
 
@@ -8,10 +8,11 @@ export class ThemeManager {
     private static instance: ThemeManager;
     private currentTheme: Theme = 'light';
     private mediaQuery: MediaQueryList | null = null;
-    private initialized: boolean = false;
 
     private constructor() {
-        // Don't initialize in constructor - wait for explicit init
+        if (typeof window !== 'undefined') {
+            this.initialize();
+        }
     }
 
     static getInstance(): ThemeManager {
@@ -21,109 +22,73 @@ export class ThemeManager {
         return ThemeManager.instance;
     }
 
-    initialize() {
-        if (this.initialized || typeof window === 'undefined') {
-            return;
+    private initialize() {
+        // Load saved theme (plain string, not JSON)
+        const saved = localStorage.getItem('theme');
+        if (saved === 'light' || saved === 'dark' || saved === 'auto') {
+            this.currentTheme = saved;
+        } else {
+            // Default to light theme
+            this.currentTheme = 'light';
+            localStorage.setItem('theme', 'light');
         }
 
-        // Load saved theme - handle both string and JSON formats
-        let savedTheme: Theme = 'light';
-        try {
-            const stored = localStorage.getItem('theme');
-            if (stored) {
-                // Remove quotes if present
-                const cleaned = stored.replace(/^"|"$/g, '');
-                if (cleaned === 'light' || cleaned === 'dark' || cleaned === 'auto') {
-                    savedTheme = cleaned as Theme;
-                }
+        // Setup system theme listener
+        this.mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        this.mediaQuery.addEventListener('change', (e) => {
+            if (this.currentTheme === 'auto') {
+                this.applyTheme(e.matches ? 'dark' : 'light');
             }
-        } catch (error) {
-            console.error('Error loading theme:', error);
-        }
+        });
 
-        this.currentTheme = savedTheme;
-
-        // Setup media query for auto mode
-        try {
-            this.mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-            this.mediaQuery.addEventListener('change', this.handleSystemThemeChange.bind(this));
-        } catch (error) {
-            console.error('Error setting up media query:', error);
-        }
-
-        // Apply theme immediately
-        this.applyTheme(savedTheme);
-        this.initialized = true;
+        // Apply initial theme immediately
+        this.applyCurrentTheme();
     }
 
-    private handleSystemThemeChange(e: MediaQueryListEvent) {
+    private applyCurrentTheme() {
         if (this.currentTheme === 'auto') {
-            this.applySystemTheme();
+            const isDark = this.mediaQuery?.matches || false;
+            this.applyTheme(isDark ? 'dark' : 'light');
+        } else {
+            this.applyTheme(this.currentTheme);
         }
     }
 
-    private applySystemTheme() {
-        if (!this.mediaQuery) return;
-
-        const isDark = this.mediaQuery.matches;
-        this.updateDOM(isDark ? 'dark' : 'light');
-    }
-
-    private updateDOM(theme: 'light' | 'dark') {
-        if (typeof window === 'undefined') return;
-
+    private applyTheme(theme: 'light' | 'dark') {
         const html = document.documentElement;
+        const body = document.body;
 
         if (theme === 'dark') {
             html.classList.add('dark');
+            body.classList.add('dark');
             html.style.colorScheme = 'dark';
+            html.style.backgroundColor = '#111827';
+            body.style.backgroundColor = '#111827';
         } else {
             html.classList.remove('dark');
+            body.classList.remove('dark');
             html.style.colorScheme = 'light';
+            html.style.backgroundColor = '#ffffff';
+            body.style.backgroundColor = '#f9fafb';
         }
 
-        // Update meta theme-color
-        try {
-            const metaTheme = document.querySelector('meta[name="theme-color"]');
-            if (metaTheme) {
-                metaTheme.setAttribute('content', theme === 'dark' ? '#1f2937' : '#0284c7');
-            }
-        } catch (error) {
-            console.error('Error updating meta theme:', error);
+        // Update theme-color meta tag
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+            meta.setAttribute('content', theme === 'dark' ? '#1f2937' : '#ffffff');
         }
 
-        // Dispatch event for components to react
-        try {
-            window.dispatchEvent(new CustomEvent('theme-changed', {
-                detail: { theme }
-            }));
-        } catch (error) {
-            console.error('Error dispatching theme event:', error);
-        }
+        // Dispatch event for React components
+        window.dispatchEvent(new CustomEvent('theme-changed', {
+            detail: { theme, effectiveTheme: theme }
+        }));
     }
 
-    private applyTheme(theme: Theme) {
-        if (theme === 'auto') {
-            this.applySystemTheme();
-        } else {
-            this.updateDOM(theme);
-        }
-    }
-
-    // Public methods
+    // Public API
     setTheme(theme: Theme) {
         this.currentTheme = theme;
-
-        // Save theme as plain string (not JSON)
-        try {
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('theme', theme);
-            }
-        } catch (error) {
-            console.error('Error saving theme:', error);
-        }
-
-        this.applyTheme(theme);
+        localStorage.setItem('theme', theme);
+        this.applyCurrentTheme();
     }
 
     getTheme(): Theme {
@@ -143,17 +108,4 @@ export class ThemeManager {
     }
 }
 
-// Export singleton instance
 export const themeManager = ThemeManager.getInstance();
-
-// Auto-initialize on import (client-side only)
-if (typeof window !== 'undefined') {
-    // Wait for DOM to be ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            themeManager.initialize();
-        });
-    } else {
-        themeManager.initialize();
-    }
-}

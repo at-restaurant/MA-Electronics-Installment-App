@@ -1,3 +1,5 @@
+// src/components/CustomerCard.tsx - FIXED with proper dark mode
+
 "use client";
 
 import { Phone } from "lucide-react";
@@ -26,7 +28,7 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
     return (
         <div
             onClick={() => onClick(customer)}
-            className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
+            className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer active:scale-[0.98]"
         >
             <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -44,8 +46,8 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
                         )}
                     </div>
                     <div>
-                        <h3 className="font-semibold text-gray-900">{customer.name}</h3>
-                        <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{customer.name}</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
                             <Phone className="w-3 h-3" />
                             {customer.phone}
                         </p>
@@ -54,8 +56,8 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
                 <span
                     className={`px-3 py-1 rounded-full text-xs font-medium ${
                         isCompleted
-                            ? "bg-green-100 text-green-700"
-                            : "bg-blue-100 text-blue-700"
+                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                            : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
                     }`}
                 >
           {isCompleted ? "✓ Complete" : "Active"}
@@ -64,10 +66,10 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
 
             <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Progress</span>
-                    <span className="font-semibold">{Math.round(progress)}%</span>
+                    <span className="text-gray-600 dark:text-gray-400">Progress</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{Math.round(progress)}%</span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
                     <div
                         className={`h-2.5 rounded-full transition-all ${
                             isCompleted
@@ -78,15 +80,15 @@ export default function CustomerCard({ customer, onClick }: CustomerCardProps) {
                     />
                 </div>
                 <div className="flex justify-between text-sm pt-2">
-          <span className="text-gray-600">
+          <span className="text-gray-600 dark:text-gray-400">
             Paid:{" "}
-              <span className="font-semibold text-green-600">
+              <span className="font-semibold text-green-600 dark:text-green-400">
               {formatCurrency(customer.paidAmount)}
             </span>
           </span>
-                    <span className="text-gray-600">
+                    <span className="text-gray-600 dark:text-gray-400">
             Left:{" "}
-                        <span className="font-semibold text-orange-600">
+                        <span className="font-semibold text-orange-600 dark:text-orange-400">
               {formatCurrency(remaining)}
             </span>
           </span>
