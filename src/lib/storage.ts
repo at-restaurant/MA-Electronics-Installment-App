@@ -1,4 +1,4 @@
-// src/lib/storage.ts - UPDATED with Profile Isolation & Single Default
+// src/lib/storage.ts - FIXED TypeScript error
 
 type StorageKey =
     | 'currentProfile'
@@ -12,6 +12,15 @@ type StorageKey =
     | 'app_settings'
     | 'installment_schedules';
 
+// ✅ Add Profile interface
+interface Profile {
+    id: number;
+    name: string;
+    description: string;
+    gradient: string;
+    createdAt: string;
+}
+
 export const Storage = {
     /**
      * ✅ Initialize SINGLE default profile (admin creates more)
@@ -19,12 +28,12 @@ export const Storage = {
     initializeDefaultProfile: (): void => {
         if (typeof window === 'undefined') return;
 
-        const profiles = Storage.get<any[]>('profiles', []);
+        const profiles = Storage.get<Profile[]>('profiles', []);
 
         if (profiles.length === 0) {
-            const defaultProfile = {
+            const defaultProfile: Profile = {
                 id: Date.now(),
-                name: "My Business", // ✅ SINGLE default profile
+                name: "My Business",
                 description: "Default business account",
                 gradient: "from-blue-500 to-purple-500",
                 createdAt: new Date().toISOString(),
@@ -57,12 +66,12 @@ export const Storage = {
     },
 
     /**
-     * ✅ Delete profile and ALL its data
+     * ✅ Delete profile and ALL its data - FIXED
      */
     deleteProfile: (profileId: number): boolean => {
         try {
             // Remove profile
-            const profiles = Storage.get<any[]>('profiles', []);
+            const profiles = Storage.get<Profile[]>('profiles', []);
             const filtered = profiles.filter(p => p.id !== profileId);
 
             if (filtered.length === 0) {
@@ -85,8 +94,8 @@ export const Storage = {
             const filteredPayments = allPayments.filter(p => !customerIds.has(p.customerId));
             Storage.save('payments', filteredPayments);
 
-            // If current profile is deleted, switch to first available
-            const current = Storage.get('currentProfile', null);
+            // ✅ FIX: Explicitly type the current profile
+            const current = Storage.get<Profile | null>('currentProfile', null);
             if (current && current.id === profileId) {
                 Storage.save('currentProfile', filtered[0]);
             }
@@ -211,34 +220,24 @@ export const Storage = {
 
             console.log('Running storage cleanup...');
 
-            const profiles = Storage.get<any[]>('profiles', []);
+            const profiles = Storage.get<Profile[]>('profiles', []);
 
             // Clean each profile separately
             profiles.forEach(profile => {
                 const customers = Storage.getProfileCustomers(profile.id);
-                const payments = Storage.getProfilePayments(profile.id);
 
                 // Keep only last 50 completed customers per profile
                 const completedCustomers = customers.filter(c => c.status === 'completed');
                 const activeCustomers = customers.filter(c => c.status !== 'completed');
-
-                let cleanedCustomers = activeCustomers;
 
                 if (completedCustomers.length > 50) {
                     completedCustomers.sort((a, b) =>
                         new Date(b.lastPayment).getTime() - new Date(a.lastPayment).getTime()
                     );
 
-                    const recentCompleted = completedCustomers.slice(0, 50);
-                    cleanedCustomers = [...activeCustomers, ...recentCompleted];
-
                     console.log(`Profile ${profile.name}: Removed ${completedCustomers.length - 50} old customers`);
                 }
             });
-
-            // Save cleaned data
-            const allCustomers = Storage.get<any[]>('customers', []);
-            localStorage.setItem('customers', JSON.stringify(allCustomers));
 
             console.log('Cleanup completed');
         } catch (error) {

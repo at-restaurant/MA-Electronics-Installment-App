@@ -1,4 +1,5 @@
-// src/app/settings/page.tsx - UPDATED with Category Management
+// src/app/settings/page.tsx - UPDATED with Google Drive
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,7 +8,6 @@ import {
     Settings as SettingsIcon,
     Bell,
     Smartphone,
-    HelpCircle,
     Info,
     Trash2,
     Download,
@@ -15,10 +15,13 @@ import {
     Plus,
     X,
     Tag,
+    Cloud,
+    ChevronRight
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import ProfileManager from "@/components/ProfileManager";
 import { Storage } from "@/lib/storage";
+import { driveManager } from "@/lib/driveManager";
 import type { Profile, NotificationSettings } from "@/types";
 
 interface AppSettings {
@@ -39,8 +42,8 @@ export default function SettingsPage() {
         soundEnabled: true,
     });
     const [storageInfo, setStorageInfo] = useState({ size: '0 KB', percentage: 0 });
+    const [driveAccounts, setDriveAccounts] = useState(0);
 
-    // ✅ Category Management State
     const [appSettings, setAppSettings] = useState<AppSettings>({
         categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
         defaultCategory: 'Electronics',
@@ -51,6 +54,10 @@ export default function SettingsPage() {
     useEffect(() => {
         loadSettings();
         updateStorageInfo();
+        loadDriveInfo();
+
+        // Auto backup every 24 hours
+        driveManager.startAutoBackup(24);
     }, []);
 
     const loadSettings = () => {
@@ -72,12 +79,16 @@ export default function SettingsPage() {
         });
         setNotifications(savedNotifications);
 
-        // Load app settings
         const savedAppSettings = Storage.get<AppSettings>('app_settings', {
             categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
             defaultCategory: 'Electronics',
         });
         setAppSettings(savedAppSettings);
+    };
+
+    const loadDriveInfo = () => {
+        const accounts = driveManager.getAccounts();
+        setDriveAccounts(accounts.length);
     };
 
     const updateStorageInfo = () => {
@@ -95,7 +106,6 @@ export default function SettingsPage() {
         Storage.save("notifications", updated);
     };
 
-    // ✅ Add Category
     const handleAddCategory = () => {
         if (!newCategory.trim()) {
             alert('Please enter category name');
@@ -118,7 +128,6 @@ export default function SettingsPage() {
         setShowAddCategory(false);
     };
 
-    // ✅ Delete Category
     const handleDeleteCategory = (category: string) => {
         if (appSettings.categories.length <= 1) {
             alert('Cannot delete last category');
@@ -141,7 +150,6 @@ export default function SettingsPage() {
         Storage.save('app_settings', updated);
     };
 
-    // ✅ Set Default Category
     const handleSetDefaultCategory = (category: string) => {
         const updated = {
             ...appSettings,
@@ -170,7 +178,7 @@ export default function SettingsPage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `ma-installment-backup-${new Date().toISOString().split("T")[0]}.json`;
+        a.download = `ma-backup-${new Date().toISOString().split("T")[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
 
@@ -203,6 +211,31 @@ export default function SettingsPage() {
             </div>
 
             <div className="p-4 space-y-4">
+                {/* ✅ NEW: Google Drive Section */}
+                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 shadow-lg">
+                    <button
+                        onClick={() => router.push('/drive')}
+                        className="w-full text-left"
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                                    <Cloud className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-white">Google Drive Backup</h3>
+                                    <p className="text-sm text-blue-100">
+                                        {driveAccounts === 0
+                                            ? 'Not connected - Tap to setup'
+                                            : `${driveAccounts} account${driveAccounts > 1 ? 's' : ''} connected`}
+                                    </p>
+                                </div>
+                            </div>
+                            <ChevronRight className="w-6 h-6 text-white" />
+                        </div>
+                    </button>
+                </div>
+
                 {/* Profile Section */}
                 <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -215,12 +248,9 @@ export default function SettingsPage() {
                     >
                         Manage Profiles
                     </button>
-                    <p className="text-xs text-gray-500 mt-2 text-center">
-                        Create multiple profiles for different businesses
-                    </p>
                 </div>
 
-                {/* ✅ Category Management */}
+                {/* Category Management */}
                 <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="font-semibold flex items-center gap-2">
@@ -267,7 +297,6 @@ export default function SettingsPage() {
                         ))}
                     </div>
 
-                    {/* Add Category Form */}
                     {showAddCategory && (
                         <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
                             <div className="flex gap-2">
@@ -299,7 +328,7 @@ export default function SettingsPage() {
                     )}
                 </div>
 
-                {/* Notifications Section */}
+                {/* Notifications */}
                 <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Bell className="w-5 h-5 text-green-600" />
@@ -383,7 +412,7 @@ export default function SettingsPage() {
                             className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
                         >
                             <Download className="w-4 h-4" />
-                            Export Data (Backup)
+                            Export Local Backup
                         </button>
                         <button
                             onClick={handleClearData}
@@ -414,7 +443,6 @@ export default function SettingsPage() {
                 </div>
             </div>
 
-            {/* Profile Manager Modal */}
             {showProfileManager && (
                 <ProfileManager
                     onClose={() => setShowProfileManager(false)}
