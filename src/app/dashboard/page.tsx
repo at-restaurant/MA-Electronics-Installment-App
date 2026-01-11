@@ -1,4 +1,4 @@
-// src/app/dashboard/page.tsx - WITH GLOBAL HEADER
+// src/app/dashboard/page.tsx - NaN FIXED + SMART DEFAULTS
 
 "use client";
 
@@ -14,12 +14,22 @@ export default function DashboardPage() {
     const { profile } = useProfile();
     const { customers, stats } = useCompactCustomers(profile?.id);
 
-    const pending = stats.expected - stats.revenue;
-    const collectionRate = stats.expected > 0
-        ? Math.round((stats.revenue / stats.expected) * 100)
+    // ✅ SMART DEFAULTS - No NaN, always 0
+    const safeStats = {
+        revenue: stats.revenue || 0,
+        expected: stats.expected || 0,
+        total: stats.total || 0,
+        active: stats.active || 0,
+        completed: stats.completed || 0,
+    };
+
+    const pending = Math.max(0, safeStats.expected - safeStats.revenue);
+
+    // ✅ Handle division by zero
+    const collectionRate = safeStats.expected > 0
+        ? Math.round((safeStats.revenue / safeStats.expected) * 100)
         : 0;
 
-    // Recent customers (last 5)
     const recentCustomers = customers
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 5);
@@ -34,7 +44,7 @@ export default function DashboardPage() {
                     <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white shadow-lg">
                         <DollarSign className="w-8 h-8 mb-2 opacity-80" />
                         <p className="text-sm opacity-90 mb-1">Total Received</p>
-                        <p className="text-2xl font-bold">{formatCurrency(stats.revenue)}</p>
+                        <p className="text-2xl font-bold">{formatCurrency(safeStats.revenue)}</p>
                     </div>
 
                     <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white shadow-lg">
@@ -46,7 +56,7 @@ export default function DashboardPage() {
                     <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white shadow-lg">
                         <Users className="w-8 h-8 mb-2 opacity-80" />
                         <p className="text-sm opacity-90 mb-1">Total Customers</p>
-                        <p className="text-2xl font-bold">{stats.total}</p>
+                        <p className="text-2xl font-bold">{safeStats.total}</p>
                     </div>
 
                     <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg">

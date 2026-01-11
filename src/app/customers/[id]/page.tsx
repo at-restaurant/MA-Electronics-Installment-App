@@ -1,4 +1,4 @@
-// src/app/customers/[id]/page.tsx - WITH GLOBAL HEADER + COMPACT HOOKS
+// src/app/customers/[id]/page.tsx - WITH GUARANTOR + CNIC DISPLAY
 
 'use client';
 
@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
     ArrowLeft, Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
-    DollarSign, History, FileText, CheckCircle, X
+    DollarSign, History, FileText, CheckCircle, X, UserCheck, Image as ImageIcon, MessageSquare
 } from 'lucide-react';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -79,7 +79,6 @@ export default function CustomerDetailPage() {
             setPaymentAmount('');
             paymentModal.hide();
 
-            // Check if completed
             const updatedCustomer = await db.customers.get(customerId);
             if (updatedCustomer && updatedCustomer.paidAmount >= updatedCustomer.totalAmount) {
                 if (confirm('Payment completed! 🎉 Send congratulations via WhatsApp?')) {
@@ -121,6 +120,17 @@ export default function CustomerDetailPage() {
             console.error('Error deleting customer:', error);
             alert('Failed to delete customer');
         }
+    };
+
+    // ✅ Toggle Auto-Messaging
+    const toggleAutoMessaging = async () => {
+        if (!customer) return;
+
+        const updated = !customer.autoMessaging;
+        await db.customers.update(customer.id, { autoMessaging: updated });
+        await loadCustomer();
+
+        alert(updated ? '✅ Auto-messages enabled' : '⏹️ Auto-messages disabled');
     };
 
     if (loading || !customer || !profile) {
@@ -199,13 +209,28 @@ export default function CustomerDetailPage() {
                         </div>
                     </div>
 
+                    {/* ✅ CNIC Photo Display */}
+                    {customer.cnicPhoto && (
+                        <div className="mb-4">
+                            <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                                <ImageIcon className="w-4 h-4" />
+                                CNIC Photo
+                            </p>
+                            <img
+                                src={customer.cnicPhoto}
+                                alt="CNIC"
+                                className="w-full max-w-md h-auto rounded-lg border-2 border-gray-200 shadow-sm"
+                            />
+                        </div>
+                    )}
+
                     <div className="flex items-center justify-between mb-4">
-            <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(isCompleted, daysOverdue)}`}>
-              {getStatusLabel(isCompleted, daysOverdue)}
-            </span>
+                        <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(isCompleted, daysOverdue)}`}>
+                            {getStatusLabel(isCompleted, daysOverdue)}
+                        </span>
                         <span className="text-sm text-gray-500">
-              Started {formatDate(customer.startDate)}
-            </span>
+                            Started {formatDate(customer.startDate)}
+                        </span>
                     </div>
 
                     {/* Progress Bar */}
@@ -241,6 +266,31 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
+                {/* ✅ Auto-Message Toggle */}
+                <button
+                    onClick={toggleAutoMessaging}
+                    className={`w-full p-4 rounded-xl border-2 transition-all ${
+                        customer.autoMessaging
+                            ? 'bg-green-50 border-green-500'
+                            : 'bg-gray-50 border-gray-300'
+                    }`}
+                >
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <MessageSquare className={`w-6 h-6 ${customer.autoMessaging ? 'text-green-600' : 'text-gray-400'}`} />
+                            <div className="text-left">
+                                <p className="font-semibold">Auto WhatsApp Messages</p>
+                                <p className="text-sm text-gray-600">
+                                    {customer.autoMessaging ? 'Enabled ✓' : 'Disabled'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className={`w-12 h-6 rounded-full transition-all ${customer.autoMessaging ? 'bg-green-500' : 'bg-gray-300'}`}>
+                            <div className={`w-5 h-5 bg-white rounded-full m-0.5 transition-transform ${customer.autoMessaging ? 'translate-x-6' : ''}`} />
+                        </div>
+                    </div>
+                </button>
+
                 {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-3">
                     <button
@@ -262,6 +312,39 @@ export default function CustomerDetailPage() {
                         className="py-3 px-4 shadow-lg shadow-green-500/30"
                     />
                 </div>
+
+                {/* ✅ Guarantors Section */}
+                {customer.guarantors && customer.guarantors.length > 0 && (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                        <h3 className="font-semibold mb-3 flex items-center gap-2">
+                            <UserCheck className="w-5 h-5 text-purple-600" />
+                            Guarantors/References ({customer.guarantors.length})
+                        </h3>
+                        <div className="space-y-3">
+                            {customer.guarantors.map(g => (
+                                <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                                    {g.photo ? (
+                                        <img src={g.photo} alt={g.name} className="w-12 h-12 rounded-full object-cover" />
+                                    ) : (
+                                        <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold">
+                                            {g.name.charAt(0)}
+                                        </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium truncate">{g.name}</p>
+                                        <p className="text-sm text-gray-500">{g.phone}</p>
+                                        {g.cnic && <p className="text-xs text-gray-400">{g.cnic}</p>}
+                                        {g.relation && (
+                                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded mt-1 inline-block">
+                                                {g.relation}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Installment Details */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">

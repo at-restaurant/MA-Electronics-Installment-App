@@ -1,4 +1,4 @@
-// src/app/layout.tsx - UPDATED with offline support
+// src/app/layout.tsx - WITH AUTO-SCHEDULER INITIALIZATION
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
@@ -56,23 +56,33 @@ export default function RootLayout({
         {/* App content */}
         {children}
 
-        {/* Service Worker registration */}
+        {/* Service Worker + Auto-Message Scheduler */}
         <script
             dangerouslySetInnerHTML={{
                 __html: `
+              // ✅ Initialize Auto-Message Scheduler
+              (async function() {
+                try {
+                  const { autoMessageScheduler } = await import('/src/lib/autoMessageScheduler.ts');
+                  autoMessageScheduler.start();
+                  console.log('✅ Auto-message scheduler initialized');
+                } catch (err) {
+                  console.error('❌ Scheduler init failed:', err);
+                }
+              })();
+              
+              // Service Worker registration
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker.register('/sw.js')
                     .then(reg => {
                       console.log('✅ Service Worker registered:', reg.scope);
                       
-                      // Check for updates
                       reg.addEventListener('updatefound', () => {
                         const newWorker = reg.installing;
                         if (newWorker) {
                           newWorker.addEventListener('statechanged', () => {
                             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                              // New version available
                               if (confirm('🔄 New version available! Update now?')) {
                                 newWorker.postMessage({ type: 'SKIP_WAITING' });
                                 window.location.reload();

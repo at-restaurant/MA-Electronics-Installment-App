@@ -14,28 +14,7 @@ export default function HomePage() {
     const router = useRouter();
     const { profile, loading } = useProfile();
     const { customers, stats } = useCompactCustomers(profile?.id);
-    const [showProfileSelector, setShowProfileSelector] = useState(false);
 
-    useEffect(() => {
-        // Show profile selector if no profile
-        if (!loading && !profile) {
-            setShowProfileSelector(true);
-        }
-    }, [loading, profile]);
-
-    // Profile selector screen
-    if (showProfileSelector || (!loading && !profile)) {
-        return (
-            <ProfileSelector
-                onSelect={async (selectedProfile) => {
-                    const { Storage } = await import("@/lib/storage");
-                    await Storage.save("currentProfile", selectedProfile);
-                    setShowProfileSelector(false);
-                    window.location.reload();
-                }}
-            />
-        );
-    }
 
     // Loading screen
     if (loading) {
