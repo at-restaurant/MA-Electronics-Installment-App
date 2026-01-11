@@ -1,4 +1,4 @@
-// src/app/daily/page.tsx - WITH FREQUENCY TABS
+// src/app/collection/page.tsx - WITH FREQUENCY TABS
 
 'use client';
 
@@ -13,7 +13,7 @@ import GlobalHeader from '@/components/GlobalHeader';
 
 type FrequencyTab = 'daily' | 'weekly' | 'monthly';
 
-export default function DailyPage() {
+export default function CollectionPage() {
     const { profile } = useProfile();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [activeTab, setActiveTab] = useState<FrequencyTab>('daily');
@@ -99,7 +99,7 @@ export default function DailyPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
-            <GlobalHeader title="Daily Collection" />
+            <GlobalHeader title="Collection" />
 
             <div className="pt-16 p-4 max-w-2xl mx-auto space-y-4">
                 {/* ✅ FREQUENCY TABS */}

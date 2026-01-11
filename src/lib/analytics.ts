@@ -22,7 +22,7 @@ export interface CustomerGrowth {
 
 export const AnalyticsService = {
     /**
-     * Get daily revenue for last N days
+     * Get collection revenue for last N days
      */
     getDailyRevenue: (payments: Payment[], days: number = 30): DailyData[] => {
         const result: { [key: string]: DailyData } = {};

@@ -81,7 +81,7 @@ export function useActiveCustomers(profileId?: number) {
 }
 
 /**
- * Get daily collection customers
+ * Get collection collection customers
  */
 export function useDailyCustomers(profileId?: number) {
     const customers = useLiveQuery(

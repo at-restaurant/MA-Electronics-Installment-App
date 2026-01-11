@@ -1,8 +1,8 @@
-// src/app/customers/[id]/edit/page.tsx - FIXED GUARANTOR MULTIPLE IMAGES
+// src/app/customers/[id]/edit/page.tsx - WITH GUARANTOR EDIT
 
 'use client';
 
-import { Camera, Save, UserPlus, Trash2, FileText, X, Upload } from 'lucide-react';
+import { Camera, Save, UserPlus, Trash2, Zap, FileText, X, Upload, Edit } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -37,7 +37,9 @@ export default function EditCustomerPage() {
     const [guarantors, setGuarantors] = useState<Guarantor[]>([]);
     const [showGuarantorForm, setShowGuarantorForm] = useState(false);
 
-    // ✅ CHANGED TO photos ARRAY
+    // ✅ NEW: Edit mode for guarantor
+    const [editingGuarantorId, setEditingGuarantorId] = useState<number | null>(null);
+
     const [guarantorForm, setGuarantorForm] = useState({
         name: '',
         phone: '',
@@ -151,7 +153,6 @@ export default function EditCustomerPage() {
         setDocuments(documents.filter((_, i) => i !== index));
     };
 
-    // ✅ GUARANTOR MULTIPLE PHOTOS UPLOAD
     const handleGuarantorPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -191,7 +192,6 @@ export default function EditCustomerPage() {
         }
     };
 
-    // ✅ REMOVE GUARANTOR PHOTO
     const removeGuarantorPhoto = (index: number) => {
         setGuarantorForm((prev) => ({
             ...prev,
@@ -199,28 +199,63 @@ export default function EditCustomerPage() {
         }));
     };
 
-    const addGuarantor = () => {
+    // ✅ EDIT GUARANTOR - Load data into form
+    const editGuarantor = (guarantor: Guarantor & { id: number }) => {
+        setEditingGuarantorId(guarantor.id);
+        setGuarantorForm({
+            name: guarantor.name,
+            phone: guarantor.phone,
+            cnic: guarantor.cnic || '',
+            photos: guarantor.photos || [],
+            relation: guarantor.relation || '',
+        });
+        setShowGuarantorForm(true);
+    };
+
+    // ✅ SAVE GUARANTOR (Add or Update)
+    const saveGuarantor = () => {
         if (!guarantorForm.name || !guarantorForm.phone) {
             alert('Name and phone required');
             return;
         }
 
-        const newGuarantor: Guarantor & { id: number } = {
-            id: Date.now(),
-            name: guarantorForm.name,
-            phone: guarantorForm.phone,
-            cnic: guarantorForm.cnic,
-            photos: guarantorForm.photos,
-            photo: guarantorForm.photos.length > 0 ? guarantorForm.photos[0] : null,
-            relation: guarantorForm.relation,
-        };
+        if (editingGuarantorId) {
+            // UPDATE existing guarantor
+            setGuarantors(guarantors.map(g =>
+                g.id === editingGuarantorId
+                    ? {
+                        id: editingGuarantorId,
+                        name: guarantorForm.name,
+                        phone: guarantorForm.phone,
+                        cnic: guarantorForm.cnic,
+                        photos: guarantorForm.photos,
+                        photo: guarantorForm.photos.length > 0 ? guarantorForm.photos[0] : null,
+                        relation: guarantorForm.relation,
+                    }
+                    : g
+            ));
+            setEditingGuarantorId(null);
+        } else {
+            // ADD new guarantor
+            const newGuarantor: Guarantor & { id: number } = {
+                id: Date.now(),
+                name: guarantorForm.name,
+                phone: guarantorForm.phone,
+                cnic: guarantorForm.cnic,
+                photos: guarantorForm.photos,
+                photo: guarantorForm.photos.length > 0 ? guarantorForm.photos[0] : null,
+                relation: guarantorForm.relation,
+            };
+            setGuarantors([...guarantors, newGuarantor]);
+        }
 
-        setGuarantors([...guarantors, newGuarantor]);
+        // Reset form
         setGuarantorForm({ name: '', phone: '', cnic: '', photos: [], relation: '' });
         setShowGuarantorForm(false);
     };
 
     const removeGuarantor = (id: number) => {
+        if (!confirm('Delete this guarantor?')) return;
         setGuarantors(guarantors.filter((g) => g.id !== id));
     };
 
@@ -462,7 +497,7 @@ export default function EditCustomerPage() {
                             </div>
                         </div>
 
-                        {/* ✅ GUARANTORS WITH MULTIPLE PHOTOS */}
+                        {/* ✅ GUARANTORS WITH EDIT FUNCTIONALITY */}
                         <div className="border-t pt-4">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="font-semibold flex items-center gap-2">
@@ -471,13 +506,18 @@ export default function EditCustomerPage() {
                                 </h3>
                                 <button
                                     type="button"
-                                    onClick={() => setShowGuarantorForm(!showGuarantorForm)}
+                                    onClick={() => {
+                                        setEditingGuarantorId(null);
+                                        setGuarantorForm({ name: '', phone: '', cnic: '', photos: [], relation: '' });
+                                        setShowGuarantorForm(!showGuarantorForm);
+                                    }}
                                     className="text-sm text-purple-600 font-medium"
                                 >
                                     {showGuarantorForm ? 'Cancel' : 'Add'}
                                 </button>
                             </div>
 
+                            {/* Guarantor List */}
                             {guarantors.length > 0 && (
                                 <div className="space-y-2 mb-3">
                                     {guarantors.map((g) => (
@@ -502,6 +542,14 @@ export default function EditCustomerPage() {
                                                 <p className="text-xs text-gray-500">{g.phone}</p>
                                                 <p className="text-xs text-purple-600">{g.photos?.length || 0} photos</p>
                                             </div>
+                                            {/* ✅ EDIT BUTTON */}
+                                            <button
+                                                type="button"
+                                                onClick={() => editGuarantor(g as Guarantor & { id: number })}
+                                                className="p-1.5 text-blue-500 hover:bg-blue-50 rounded"
+                                            >
+                                                <Edit className="w-4 h-4" />
+                                            </button>
                                             <button
                                                 type="button"
                                                 onClick={() => removeGuarantor(g.id)}
@@ -514,8 +562,13 @@ export default function EditCustomerPage() {
                                 </div>
                             )}
 
+                            {/* Guarantor Form */}
                             {showGuarantorForm && (
                                 <div className="p-4 bg-purple-50 rounded-xl border border-purple-200 space-y-3">
+                                    <p className="text-sm font-semibold text-purple-700">
+                                        {editingGuarantorId ? '✏️ Edit Guarantor' : '➕ Add Guarantor'}
+                                    </p>
+
                                     <div className="grid grid-cols-2 gap-3">
                                         <input
                                             placeholder="Name *"
@@ -545,7 +598,7 @@ export default function EditCustomerPage() {
                                         />
                                     </div>
 
-                                    {/* ✅ MULTIPLE PHOTOS SECTION */}
+                                    {/* Photos */}
                                     <div>
                                         <label className="block text-xs font-medium mb-2 text-purple-700">
                                             Photos (Max 5) - CNIC, Documents
@@ -592,10 +645,10 @@ export default function EditCustomerPage() {
 
                                     <button
                                         type="button"
-                                        onClick={addGuarantor}
+                                        onClick={saveGuarantor}
                                         className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700"
                                     >
-                                        Add Guarantor
+                                        {editingGuarantorId ? 'Update Guarantor' : 'Add Guarantor'}
                                     </button>
                                 </div>
                             )}

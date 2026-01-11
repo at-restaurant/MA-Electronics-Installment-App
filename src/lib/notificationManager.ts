@@ -121,7 +121,7 @@ export class NotificationManager {
                 }
             }
         } catch (error) {
-            console.error('Failed to check daily reminders:', error);
+            console.error('Failed to check collection reminders:', error);
         }
     }
 
@@ -159,11 +159,11 @@ export class NotificationManager {
                 body: `Received:  ${formatCurrency(stats.totalReceived)} | Expected: ${formatCurrency(
                     stats.totalExpected
                 )} | Collection:  ${stats.collectionRate. toFixed(1)}%`,
-                tag: 'daily-summary',
+                tag: 'collection-summary',
                 requireInteraction: false,
             });
         } catch (error) {
-            console.error('Failed to send daily summary:', error);
+            console.error('Failed to send collection summary:', error);
         }
     }
 

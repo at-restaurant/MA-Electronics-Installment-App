@@ -1,12 +1,13 @@
-// src/app/customers/[id]/page.tsx - ADD PAYMENT SOURCE
+// src/app/customers/[id]/page.tsx - SIMPLIFIED (View Only)
 
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
-    ArrowLeft, Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
-    DollarSign, History, FileText, CheckCircle, X, UserCheck, Image as ImageIcon, MessageSquare
+    Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
+    DollarSign, History, FileText, CheckCircle, X, UserCheck,
+    Image as ImageIcon, MessageSquare
 } from 'lucide-react';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -35,7 +36,7 @@ export default function CustomerDetailPage() {
 
     const paymentModal = useModal();
     const [paymentAmount, setPaymentAmount] = useState('');
-    const [paymentSource, setPaymentSource] = useState<'online' | 'offline'>('offline'); // ✅ NEW
+    const [paymentSource, setPaymentSource] = useState<'online' | 'offline'>('offline');
 
     const { payments, addPayment, deletePayment } = usePayments(customerId);
 
@@ -74,12 +75,12 @@ export default function CustomerDetailPage() {
                 customerId: customer.id,
                 amount,
                 date: new Date().toISOString().split('T')[0],
-                paymentSource, // ✅ SAVE SOURCE
+                paymentSource,
             });
 
             await loadCustomer();
             setPaymentAmount('');
-            setPaymentSource('offline'); // ✅ RESET
+            setPaymentSource('offline');
             paymentModal.hide();
 
             const updatedCustomer = await db.customers.get(customerId);
@@ -310,31 +311,69 @@ export default function CustomerDetailPage() {
                     />
                 </div>
 
+                {/* ✅ GUARANTORS - VIEW ONLY (Edit pe click karne par edit page khul jayega) */}
                 {customer.guarantors && customer.guarantors.length > 0 && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <h3 className="font-semibold mb-3 flex items-center gap-2">
                             <UserCheck className="w-5 h-5 text-purple-600" />
-                            Guarantors/References ({customer.guarantors.length})
+                            Guarantors ({customer.guarantors.length})
                         </h3>
                         <div className="space-y-3">
                             {customer.guarantors.map(g => (
-                                <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                                    {g.photo ? (
-                                        <img src={g.photo} alt={g.name} className="w-12 h-12 rounded-full object-cover" />
-                                    ) : (
-                                        <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold">
-                                            {g.name.charAt(0)}
+                                <div
+                                    key={g.id}
+                                    className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200"
+                                >
+                                    <div className="flex items-start gap-3">
+                                        {/* Photos */}
+                                        <div className="flex gap-2 flex-shrink-0">
+                                            {g.photos && g.photos.length > 0 ? (
+                                                <>
+                                                    {g.photos.slice(0, 2).map((photo, idx) => (
+                                                        <img
+                                                            key={idx}
+                                                            src={photo}
+                                                            alt={`${g.name} ${idx + 1}`}
+                                                            className="w-16 h-16 rounded-lg object-cover border-2 border-white shadow-sm"
+                                                        />
+                                                    ))}
+                                                    {g.photos.length > 2 && (
+                                                        <div className="w-16 h-16 rounded-lg bg-purple-100 flex items-center justify-center text-sm text-purple-600 font-bold border-2 border-white shadow-sm">
+                                                            +{g.photos.length - 2}
+                                                        </div>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <div className="w-16 h-16 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xl border-2 border-white shadow-sm">
+                                                    {g.name.charAt(0)}
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-medium truncate">{g.name}</p>
-                                        <p className="text-sm text-gray-500">{g.phone}</p>
-                                        {g.cnic && <p className="text-xs text-gray-400">{g.cnic}</p>}
-                                        {g.relation && (
-                                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded mt-1 inline-block">
-                                                {g.relation}
-                                            </span>
-                                        )}
+
+                                        {/* Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-base truncate">{g.name}</p>
+                                            <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
+                                                <Phone className="w-3 h-3" />
+                                                {g.phone}
+                                            </p>
+                                            {g.cnic && (
+                                                <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                                    <CreditCard className="w-3 h-3" />
+                                                    {g.cnic}
+                                                </p>
+                                            )}
+                                            <div className="flex items-center gap-2 mt-2">
+                                                {g.relation && (
+                                                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                                                        {g.relation}
+                                                    </span>
+                                                )}
+                                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                                                    {g.photos?.length || 0} photos
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -369,7 +408,7 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* ✅ PAYMENT HISTORY WITH SOURCE */}
+                {/* Payment History */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                         <History className="w-5 h-5 text-blue-600" />
@@ -388,7 +427,6 @@ export default function CustomerDetailPage() {
                                         <div className="flex-1 min-w-0">
                                             <p className="font-medium">{formatCurrency(payment.amount)}</p>
                                             <p className="text-sm text-gray-500">{formatDate(payment.date)}</p>
-                                            {/* ✅ SHOW PAYMENT SOURCE */}
                                             <p className="text-xs text-gray-400 mt-0.5">
                                                 {payment.paymentSource === 'online' ? '💳 Online Transfer' : '💵 Cash/Check'}
                                             </p>
@@ -418,11 +456,11 @@ export default function CustomerDetailPage() {
                 )}
             </div>
 
-            {/* ✅ ADD PAYMENT MODAL WITH SOURCE SELECTION */}
+            {/* Payment Modal */}
             {paymentModal.open && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6">
-                        <div className="flex items-center justify-between mb-4">
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md">
+                        <div className="p-4 border-b flex items-center justify-between">
                             <h3 className="text-xl font-bold">Add Payment</h3>
                             <button
                                 onClick={() => paymentModal.hide()}
@@ -431,76 +469,55 @@ export default function CustomerDetailPage() {
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="space-y-4">
+
+                        <div className="p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Payment Amount (₨)
+                                    Amount *
                                 </label>
                                 <input
                                     type="number"
                                     value={paymentAmount}
                                     onChange={(e) => setPaymentAmount(e.target.value)}
-                                    placeholder={customer.installmentAmount.toString()}
+                                    placeholder="Enter amount"
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    autoFocus
-                                    min="0"
-                                    step="0.01"
                                 />
-                                <p className="text-sm text-gray-500 mt-1">
-                                    Suggested: {formatCurrency(customer.installmentAmount)}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                    Remaining: {formatCurrency(Math.max(0, remaining))}
-                                </p>
                             </div>
 
-                            {/* ✅ PAYMENT SOURCE SELECTOR */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Payment Source
+                                    Payment Source *
                                 </label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
-                                        type="button"
                                         onClick={() => setPaymentSource('offline')}
-                                        className={`py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                                        className={`py-3 px-4 rounded-xl border-2 transition-all ${
                                             paymentSource === 'offline'
-                                                ? 'bg-blue-600 text-white shadow-lg'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                                : 'border-gray-200 hover:border-gray-300'
                                         }`}
                                     >
-                                        <span>💵</span>
-                                        <span>Cash/Check</span>
+                                        💵 Cash/Check
                                     </button>
                                     <button
-                                        type="button"
                                         onClick={() => setPaymentSource('online')}
-                                        className={`py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                                        className={`py-3 px-4 rounded-xl border-2 transition-all ${
                                             paymentSource === 'online'
-                                                ? 'bg-blue-600 text-white shadow-lg'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                                : 'border-gray-200 hover:border-gray-300'
                                         }`}
                                     >
-                                        <span>💳</span>
-                                        <span>Online</span>
+                                        💳 Online Transfer
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => paymentModal.hide()}
-                                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleAddPayment}
-                                    className="flex-1 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
-                                >
-                                    Add Payment
-                                </button>
-                            </div>
+                            <button
+                                onClick={handleAddPayment}
+                                className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
+                            >
+                                Add Payment
+                            </button>
                         </div>
                     </div>
                 </div>
