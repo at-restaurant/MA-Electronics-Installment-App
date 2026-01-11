@@ -1,4 +1,4 @@
-// src/lib/whatsapp-unified.ts - SINGLE WHATSAPP SERVICE
+// src/lib/whatsapp-unified.ts - FIXED for Build
 
 import { formatCurrency, formatDate } from './utils';
 import { db } from './db';
@@ -9,7 +9,7 @@ import type { Customer, WhatsAppQueue } from '@/types';
 // ============================================
 
 const Templates = {
-    welcome: (customer: Customer) => `
+    welcome: (customer: Pick<Customer, 'name' | 'totalAmount' | 'installmentAmount' | 'startDate'>) => `
 *Assalam-o-Alaikum ${customer.name} Sahab!* 🙏
 
 Aap ka *MA Electronics* mein bohot bohot shukria!
@@ -23,7 +23,7 @@ Aap ka *MA Electronics* mein bohot bohot shukria!
 _MA Electronics - Aap ka Bharosa_
   `.trim(),
 
-    payment: (customer: Customer, amount: number, remaining: number) => `
+    payment: (customer: Pick<Customer, 'name'>, amount: number, remaining: number) => `
 ✅ *Qist Wusool Ho Gayi!*
 
 *${customer.name} Sahab*,
@@ -34,7 +34,7 @@ _MA Electronics - Aap ka Bharosa_
 _MA Electronics_
   `.trim(),
 
-    reminder: (customer: Customer, remaining: number) => `
+    reminder: (customer: Pick<Customer, 'name' | 'installmentAmount'>, remaining: number) => `
 *Assalam-o-Alaikum ${customer.name} Sahab!* 🙏
 
 💰 Baaqi: *${formatCurrency(remaining)}*
@@ -43,7 +43,7 @@ _MA Electronics_
 _MA Electronics_
   `.trim(),
 
-    overdue: (customer: Customer, days: number, remaining: number) => `
+    overdue: (customer: Pick<Customer, 'name'>, days: number, remaining: number) => `
 ⚠️ *Yaad Dehani* ⚠️
 
 *${customer.name} Sahab*,
@@ -54,7 +54,7 @@ Qist *${days} din* takheer mein hai.
 _MA Electronics_
   `.trim(),
 
-    completion: (customer: Customer) => `
+    completion: (customer: Pick<Customer, 'name' | 'totalAmount'>) => `
 🎉 *MUBARAK HO!* 🎉
 
 *${customer.name} Sahab* ne tamam qistain mukammal kar lein!
@@ -170,7 +170,7 @@ export class WhatsAppService {
     /**
      * Send welcome message
      */
-    static sendWelcome(customer: Customer): void {
+    static sendWelcome(customer: Pick<Customer, 'name' | 'phone' | 'totalAmount' | 'installmentAmount' | 'startDate'>): void {
         const message = Templates.welcome(customer);
         this.openWhatsApp(customer.phone, message);
     }
@@ -178,7 +178,7 @@ export class WhatsAppService {
     /**
      * Send payment reminder
      */
-    static sendReminder(customer: Customer): void {
+    static sendReminder(customer: Pick<Customer, 'name' | 'phone' | 'totalAmount' | 'paidAmount' | 'installmentAmount'>): void {
         const remaining = customer.totalAmount - customer.paidAmount;
         const message = Templates.reminder(customer, remaining);
         this.openWhatsApp(customer.phone, message);
@@ -187,7 +187,7 @@ export class WhatsAppService {
     /**
      * Send overdue alert
      */
-    static sendOverdue(customer: Customer, days: number): void {
+    static sendOverdue(customer: Pick<Customer, 'name' | 'phone' | 'totalAmount' | 'paidAmount'>, days: number): void {
         const remaining = customer.totalAmount - customer.paidAmount;
         const message = Templates.overdue(customer, days, remaining);
         this.openWhatsApp(customer.phone, message);
@@ -196,7 +196,7 @@ export class WhatsAppService {
     /**
      * Send completion message
      */
-    static sendCompletion(customer: Customer): void {
+    static sendCompletion(customer: Pick<Customer, 'name' | 'phone' | 'totalAmount'>): void {
         const message = Templates.completion(customer);
         this.openWhatsApp(customer.phone, message);
     }

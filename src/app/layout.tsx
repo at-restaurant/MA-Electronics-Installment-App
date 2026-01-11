@@ -5,6 +5,7 @@ import { Inter } from 'next/font/google';
 import '@/app/globals.css';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { DatabaseInitializer } from '@/components/DatabaseInitializer';
+import { InstallPrompt } from '@/components/InstallPrompt';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -55,6 +56,8 @@ export default function RootLayout({
 
         {/* App content */}
         {children}
+
+        <InstallPrompt />
 
         {/* Service Worker Registration */}
         <script

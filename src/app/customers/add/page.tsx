@@ -1,14 +1,13 @@
-// src/app/customers/add/page.tsx - UPDATED TO USE NEW SERVICES
+// src/app/customers/add/page.tsx - MULTIPLE DOCUMENTS & IMAGES
 
 'use client';
 
-import { Camera, Save, UserPlus, Trash2, Zap, MessageSquare } from 'lucide-react';
+import { Camera, Save, UserPlus, Trash2, Zap, FileText, X, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
 import { db } from '@/lib/db';
 import { ImageCompression } from '@/lib/compression';
-import { WhatsAppService } from '@/lib/whatsapp-unified';
 import { useProfile } from '@/hooks/useCompact';
 import type { Customer, Guarantor } from '@/types';
 
@@ -27,11 +26,13 @@ export default function AddCustomerPage() {
         frequency: 'daily' as 'daily' | 'weekly' | 'monthly',
         startDate: new Date().toISOString().split('T')[0],
         photo: null as string | null,
-        cnicPhoto: null as string | null,
         category: 'Electronics',
         notes: '',
-        autoMessaging: true,
     });
+
+    // ✅ MULTIPLE IMAGES STATE
+    const [documents, setDocuments] = useState<string[]>([]);
+    const [uploading, setUploading] = useState(false);
 
     const [guarantors, setGuarantors] = useState<(Guarantor & { id: number })[]>([]);
     const [showGuarantorForm, setShowGuarantorForm] = useState(false);
@@ -45,7 +46,6 @@ export default function AddCustomerPage() {
 
     const [plans, setPlans] = useState<any[]>([]);
     const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
-    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
         loadCategories();
@@ -126,12 +126,11 @@ export default function AddCustomerPage() {
         return end.toISOString().split('T')[0];
     };
 
-    // ✅ NEW: Using ImageCompression service
+    // ✅ PROFILE PHOTO UPLOAD
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Validate
         const validation = ImageCompression.validateFile(file);
         if (!validation.valid) {
             alert(validation.error);
@@ -145,18 +144,10 @@ export default function AddCustomerPage() {
 
             if (field === 'photo') {
                 compressed = await ImageCompression.compressProfile(file);
-            } else if (field === 'cnicPhoto') {
-                compressed = await ImageCompression.compressCNIC(file);
+                setForm((prev) => ({ ...prev, photo: compressed }));
             } else if (field === 'guarantorPhoto') {
                 compressed = await ImageCompression.compressGuarantor(file);
-            } else {
-                compressed = await ImageCompression.compress(file);
-            }
-
-            if (field === 'guarantorPhoto') {
                 setGuarantorForm((prev) => ({ ...prev, photo: compressed }));
-            } else {
-                setForm((prev) => ({ ...prev, [field]: compressed }));
             }
         } catch (error) {
             console.error('Image compression failed:', error);
@@ -164,6 +155,49 @@ export default function AddCustomerPage() {
         } finally {
             setUploading(false);
         }
+    };
+
+    // ✅ MULTIPLE DOCUMENTS UPLOAD (CNIC, Bills, etc.)
+    const handleDocumentsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        if (documents.length + files.length > 10) {
+            alert('Maximum 10 documents allowed');
+            return;
+        }
+
+        setUploading(true);
+
+        try {
+            const newDocs: string[] = [];
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+
+                // Validate size (max 5MB per file)
+                if (file.size > 5 * 1024 * 1024) {
+                    alert(`${file.name} is too large (max 5MB)`);
+                    continue;
+                }
+
+                // Compress image
+                const compressed = await ImageCompression.compressCNIC(file);
+                newDocs.push(compressed);
+            }
+
+            setDocuments([...documents, ...newDocs]);
+        } catch (error) {
+            console.error('Document upload failed:', error);
+            alert('Failed to upload documents');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // ✅ REMOVE DOCUMENT
+    const removeDocument = (index: number) => {
+        setDocuments(documents.filter((_, i) => i !== index));
     };
 
     const addGuarantor = () => {
@@ -187,7 +221,6 @@ export default function AddCustomerPage() {
         setGuarantors(guarantors.filter((g) => g.id !== id));
     };
 
-    // ✅ NEW: Using db directly + WhatsAppService
     const handleSubmit = async () => {
         if (!form.name || !form.phone || !form.totalAmount || !form.installmentAmount || !profile) {
             alert('Please fill all required fields');
@@ -203,8 +236,8 @@ export default function AddCustomerPage() {
                 address: form.address,
                 cnic: form.cnic,
                 photo: form.photo,
-                cnicPhoto: form.cnicPhoto,
-                cnicPhotos: form.cnicPhoto ? [form.cnicPhoto] : [],
+                cnicPhoto: documents.length > 0 ? documents[0] : null, // First doc as main CNIC
+                cnicPhotos: documents, // ✅ ALL DOCUMENTS
                 document: null,
                 totalAmount: parseFloat(form.totalAmount),
                 installmentAmount: parseFloat(form.installmentAmount),
@@ -217,20 +250,13 @@ export default function AddCustomerPage() {
                 status: 'active',
                 createdAt: new Date().toISOString(),
                 category: form.category,
-                autoMessaging: form.autoMessaging,
+                autoMessaging: false,
                 guarantors,
                 autoSchedule: true,
                 tags: [],
             };
 
-            // Save to database
             await db.customers.add(customer);
-
-            // ✅ Queue welcome message (works offline!)
-            if (form.autoMessaging) {
-                await WhatsAppService.queueMessage(customer, 'welcome');
-            }
-
             router.push('/customers');
         } catch (error) {
             console.error('Failed to save customer:', error);
@@ -339,27 +365,56 @@ export default function AddCustomerPage() {
                             />
                         </div>
 
-                        {/* CNIC Photo */}
+                        {/* ✅ MULTIPLE DOCUMENTS UPLOAD */}
                         <div>
-                            <label className="block text-sm font-medium mb-2">CNIC Photo</label>
-                            <div className="flex gap-3">
-                                {form.cnicPhoto && (
-                                    <img src={form.cnicPhoto} alt="CNIC" className="w-32 h-20 object-cover rounded-lg border" />
-                                )}
-                                <label className={`flex-1 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 cursor-pointer transition-colors flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}>
-                                    <Camera className="w-5 h-5 text-gray-400" />
+                            <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-blue-600" />
+                                Documents (CNIC, Bills, Agreement, etc.) - Max 10
+                            </label>
+
+                            {/* Document Grid */}
+                            {documents.length > 0 && (
+                                <div className="grid grid-cols-3 gap-2 mb-3">
+                                    {documents.map((doc, index) => (
+                                        <div key={index} className="relative group">
+                                            <img
+                                                src={doc}
+                                                alt={`Document ${index + 1}`}
+                                                className="w-full h-24 object-cover rounded-lg border-2 border-gray-200"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => removeDocument(index)}
+                                                className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                            <p className="text-xs text-center mt-1 text-gray-600">Doc {index + 1}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Upload Button */}
+                            {documents.length < 10 && (
+                                <label className={`w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 cursor-pointer transition-colors flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}>
+                                    <Upload className="w-5 h-5 text-gray-400" />
                                     <span className="text-sm text-gray-600">
-                                        {uploading ? 'Compressing...' : 'Upload CNIC'}
+                                        {uploading ? 'Uploading...' : `Upload Documents (${documents.length}/10)`}
                                     </span>
                                     <input
                                         type="file"
                                         accept="image/*"
+                                        multiple
                                         className="hidden"
-                                        onChange={(e) => handleImageUpload(e, 'cnicPhoto')}
+                                        onChange={handleDocumentsUpload}
                                         disabled={uploading}
                                     />
                                 </label>
-                            </div>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1">
+                                💡 CNIC front/back, bills, agreement, guarantor docs
+                            </p>
                         </div>
 
                         {/* Payment Details */}
@@ -440,25 +495,6 @@ export default function AddCustomerPage() {
                                     />
                                 </div>
                             </div>
-                        </div>
-
-                        {/* Auto-Message Toggle */}
-                        <div className="border-t pt-4">
-                            <label className="flex items-center justify-between p-4 bg-green-50 rounded-xl cursor-pointer">
-                                <div className="flex items-center gap-3">
-                                    <MessageSquare className="w-5 h-5 text-green-600" />
-                                    <div>
-                                        <p className="font-medium">Auto WhatsApp Messages</p>
-                                        <p className="text-xs text-gray-600">Automatic reminders (works offline)</p>
-                                    </div>
-                                </div>
-                                <input
-                                    type="checkbox"
-                                    checked={form.autoMessaging}
-                                    onChange={(e) => setForm({ ...form, autoMessaging: e.target.checked })}
-                                    className="w-6 h-6 text-green-600 rounded"
-                                />
-                            </label>
                         </div>
 
                         {/* Guarantors */}
