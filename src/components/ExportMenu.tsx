@@ -1,10 +1,10 @@
-// src/components/ExportMenu.tsx
+// src/components/ExportMenu.tsx - FIXED
 "use client";
 
 import { useState } from 'react';
 import { Download, FileText, Calendar, TrendingUp, X } from 'lucide-react';
 import { PDFService } from '@/lib/pdf';
-import { Storage } from '@/lib/storage';
+import { db } from '@/lib/db';
 import type { Customer, Payment, Profile } from '@/types';
 
 interface ExportMenuProps {
@@ -15,55 +15,97 @@ interface ExportMenuProps {
 export default function ExportMenu({ onClose, customer }: ExportMenuProps) {
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+    const [loading, setLoading] = useState(false);
 
-    const handleExportStatement = () => {
+    const handleExportStatement = async () => {
         if (!customer) return;
 
-        const currentProfile = Storage.get<Profile | null>('currentProfile', null);
-        if (!currentProfile) return;
+        setLoading(true);
+        try {
+            const currentProfile = await db.getMeta<Profile | null>('currentProfile', null);
+            if (!currentProfile) return;
 
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const customerPayments = allPayments.filter(p => p.customerId === customer.id);
+            const allPayments = await db.payments
+                .where('customerId')
+                .equals(customer.id)
+                .reverse()
+                .sortBy('date');
 
-        PDFService.generateStatement(customer, customerPayments, currentProfile.name);
-        onClose();
+            PDFService.generateStatement(customer, allPayments, currentProfile.name);
+            onClose();
+        } catch (error) {
+            console.error('Export statement error:', error);
+            alert('Failed to export statement');
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handleExportMonthly = () => {
-        const currentProfile = Storage.get<Profile | null>('currentProfile', null);
-        if (!currentProfile) return;
+    const handleExportMonthly = async () => {
+        setLoading(true);
+        try {
+            const currentProfile = await db.getMeta<Profile | null>('currentProfile', null);
+            if (!currentProfile) return;
 
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const customers = allCustomers.filter(c => c.profileId === currentProfile.id);
+            const customers = await db.customers
+                .where('profileId')
+                .equals(currentProfile.id)
+                .toArray();
 
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const monthPayments = allPayments.filter(p => {
-            return p.date.startsWith(selectedMonth);
-        });
+            const allPayments = await db.payments
+                .where('date')
+                .between(
+                    selectedMonth + '-01',
+                    selectedMonth + '-31',
+                    true,
+                    true
+                )
+                .toArray();
 
-        const monthName = new Date(selectedMonth + '-01').toLocaleDateString('en-US', {
-            month: 'long',
-            year: 'numeric'
-        });
+            const monthName = new Date(selectedMonth + '-01').toLocaleDateString('en-US', {
+                month: 'long',
+                year: 'numeric'
+            });
 
-        PDFService.generateMonthlyReport(customers, monthPayments, monthName, currentProfile.name);
-        onClose();
+            PDFService.generateMonthlyReport(customers, allPayments, monthName, currentProfile.name);
+            onClose();
+        } catch (error) {
+            console.error('Export monthly error:', error);
+            alert('Failed to export monthly report');
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handleExportYearly = () => {
-        const currentProfile = Storage.get<Profile | null>('currentProfile', null);
-        if (!currentProfile) return;
+    const handleExportYearly = async () => {
+        setLoading(true);
+        try {
+            const currentProfile = await db.getMeta<Profile | null>('currentProfile', null);
+            if (!currentProfile) return;
 
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const customers = allCustomers.filter(c => c.profileId === currentProfile.id);
+            const customers = await db.customers
+                .where('profileId')
+                .equals(currentProfile.id)
+                .toArray();
 
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const yearPayments = allPayments.filter(p => {
-            return p.date.startsWith(selectedYear);
-        });
+            const allPayments = await db.payments
+                .where('date')
+                .between(
+                    selectedYear + '-01-01',
+                    selectedYear + '-12-31',
+                    true,
+                    true
+                )
+                .toArray();
 
-        PDFService.generateYearlyReport(customers, yearPayments, selectedYear, currentProfile.name);
-        onClose();
+            PDFService.generateYearlyReport(customers, allPayments, selectedYear, currentProfile.name);
+            onClose();
+        } catch (error) {
+            console.error('Export yearly error:', error);
+            alert('Failed to export yearly report');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -77,6 +119,7 @@ export default function ExportMenu({ onClose, customer }: ExportMenuProps) {
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                        disabled={loading}
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -87,7 +130,8 @@ export default function ExportMenu({ onClose, customer }: ExportMenuProps) {
                     {customer && (
                         <button
                             onClick={handleExportStatement}
-                            className="w-full p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors flex items-center gap-3 text-left"
+                            disabled={loading}
+                            className="w-full p-4 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors flex items-center gap-3 text-left disabled:opacity-50"
                         >
                             <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
                                 <FileText className="w-6 h-6 text-white" />
@@ -116,12 +160,14 @@ export default function ExportMenu({ onClose, customer }: ExportMenuProps) {
                                 value={selectedMonth}
                                 onChange={(e) => setSelectedMonth(e.target.value)}
                                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                disabled={loading}
                             />
                             <button
                                 onClick={handleExportMonthly}
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                                disabled={loading}
+                                className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
                             >
-                                Export
+                                {loading ? '...' : 'Export'}
                             </button>
                         </div>
                     </div>
@@ -142,6 +188,7 @@ export default function ExportMenu({ onClose, customer }: ExportMenuProps) {
                                 value={selectedYear}
                                 onChange={(e) => setSelectedYear(e.target.value)}
                                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                disabled={loading}
                             >
                                 {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
                                     <option key={year} value={year}>{year}</option>
@@ -149,9 +196,10 @@ export default function ExportMenu({ onClose, customer }: ExportMenuProps) {
                             </select>
                             <button
                                 onClick={handleExportYearly}
-                                className="px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+                                disabled={loading}
+                                className="px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50"
                             >
-                                Export
+                                {loading ? '...' : 'Export'}
                             </button>
                         </div>
                     </div>

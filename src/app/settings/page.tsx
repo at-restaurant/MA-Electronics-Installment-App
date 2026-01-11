@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx - WITH STORAGE OPTIMIZATION
+// src/app/settings/page.tsx - COMPLETELY FIXED
 
 "use client";
 
@@ -6,14 +6,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
     Bell, Smartphone, Info, Trash2, Download, Upload, Briefcase,
-    Plus, X, Tag, HardDrive, Sparkles
+    Plus, X, Tag, HardDrive, Sparkles, Volume2, VolumeX, BellRing
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import GlobalHeader from "@/components/GlobalHeader";
 import ProfileManager from "@/components/ProfileManager";
-import { Storage } from "@/lib/storage";
-import { OptimizedStorage } from "@/lib/storage-optimized";
 import { db } from "@/lib/db";
+import { OptimizedStorage } from "@/lib/storage-ultra-compressed";
 import { useProfile } from "@/hooks/useCompact";
 import type { NotificationSettings } from "@/types";
 
@@ -26,6 +25,8 @@ export default function SettingsPage() {
     const router = useRouter();
     const { profile } = useProfile();
     const [showProfileManager, setShowProfileManager] = useState(false);
+    const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+    const [isInstallable, setIsInstallable] = useState(false);
 
     const [notifications, setNotifications] = useState<NotificationSettings>({
         enableNotifications: true,
@@ -54,14 +55,57 @@ export default function SettingsPage() {
     useEffect(() => {
         loadSettings();
         updateStorageInfo();
+        setupInstallPrompt();
     }, []);
 
-    const loadSettings = async () => {
-        const savedNotifications = await Storage.get<NotificationSettings>("notifications", notifications);
-        setNotifications(savedNotifications);
+    const setupInstallPrompt = () => {
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            setDeferredPrompt(e);
+            setIsInstallable(true);
+        });
+    };
 
-        const savedAppSettings = await Storage.get<AppSettings>('app_settings', appSettings);
-        setAppSettings(savedAppSettings);
+    const handleInstallClick = async () => {
+        if (!deferredPrompt) {
+            alert('App pehle se installed hai ya browser support nahi karta');
+            return;
+        }
+
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+
+        if (outcome === 'accepted') {
+            alert('✅ App install ho rahi hai!');
+        }
+
+        setDeferredPrompt(null);
+        setIsInstallable(false);
+    };
+
+    const loadSettings = async () => {
+        // ✅ FIXED: Always provide default value
+        const defaultNotifications: NotificationSettings = {
+            enableNotifications: true,
+            paymentReminders: true,
+            overdueAlerts: true,
+            dailySummary: false,
+            reminderTime: '09:00',
+            soundEnabled: true,
+        };
+
+        const savedNotifications = await db.getMeta<NotificationSettings>('notifications', defaultNotifications);
+
+        // ✅ FIXED: Use OR operator to ensure never undefined
+        setNotifications(savedNotifications || defaultNotifications);
+
+        const defaultAppSettings: AppSettings = {
+            categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
+            defaultCategory: 'Electronics',
+        };
+
+        const savedAppSettings = await db.getMeta<AppSettings>('app_settings', defaultAppSettings);
+        setAppSettings(savedAppSettings || defaultAppSettings);
     };
 
     const updateStorageInfo = async () => {
@@ -72,7 +116,50 @@ export default function SettingsPage() {
     const handleNotificationToggle = async (key: keyof NotificationSettings) => {
         const updated = { ...notifications, [key]: !notifications[key] };
         setNotifications(updated);
-        await Storage.save("notifications", updated);
+        await db.setMeta("notifications", updated);
+
+        // Request permission if enabling notifications
+        if (key === 'enableNotifications' && updated.enableNotifications) {
+            if ('Notification' in window && Notification.permission === 'default') {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    new Notification('MA Electronics', {
+                        body: 'Notifications ab enabled hain! ✅',
+                        icon: '/icon-192x192.png',
+                    });
+                }
+            }
+        }
+    };
+
+    const testNotification = () => {
+        if (!notifications.enableNotifications) {
+            alert('Pehle notifications enable karein');
+            return;
+        }
+
+        if ('Notification' in window) {
+            if (Notification.permission === 'granted') {
+                new Notification('Test Notification 🔔', {
+                    body: 'Yeh aik test notification hai. Aap notifications receive kar sakte hain!',
+                    icon: '/icon-192x192.png',
+                    vibrate: [200, 100, 200],
+                });
+            } else if (Notification.permission === 'default') {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        new Notification('Test Notification 🔔', {
+                            body: 'Notifications ab kaam kar rahi hain!',
+                            icon: '/icon-192x192.png',
+                        });
+                    }
+                });
+            } else {
+                alert('⚠️ Notifications blocked hain. Browser settings mein allow karein.');
+            }
+        } else {
+            alert('⚠️ Aap ka browser notifications support nahi karta');
+        }
     };
 
     const handleAddCategory = async () => {
@@ -87,7 +174,7 @@ export default function SettingsPage() {
         };
 
         setAppSettings(updated);
-        await Storage.save('app_settings', updated);
+        await db.setMeta('app_settings', updated);
         setNewCategory('');
         setShowAddCategory(false);
     };
@@ -104,16 +191,15 @@ export default function SettingsPage() {
         };
 
         setAppSettings(updated);
-        await Storage.save('app_settings', updated);
+        await db.setMeta('app_settings', updated);
     };
 
     const handleSetDefaultCategory = async (category: string) => {
         const updated = { ...appSettings, defaultCategory: category };
         setAppSettings(updated);
-        await Storage.save('app_settings', updated);
+        await db.setMeta('app_settings', updated);
     };
 
-    // ✅ NEW: Storage Cleanup
     const handleCleanupStorage = async () => {
         if (!confirm('Clean up old completed records? This will archive customers completed over 3 months ago.')) return;
 
@@ -122,7 +208,6 @@ export default function SettingsPage() {
         alert(`✅ Cleaned ${cleaned} old records! Storage optimized.`);
     };
 
-    // ✅ NEW: Vacuum Database
     const handleVacuum = async () => {
         if (!confirm('Optimize database? This may take a few seconds.')) return;
 
@@ -184,6 +269,29 @@ export default function SettingsPage() {
             <GlobalHeader title="Settings" />
 
             <div className="pt-16 p-4 space-y-4">
+                {/* Install App Button */}
+                {isInstallable && (
+                    <div className="bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 text-white shadow-lg">
+                        <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                                <h3 className="font-bold mb-1 flex items-center gap-2">
+                                    <Smartphone className="w-5 h-5" />
+                                    App Install Karein
+                                </h3>
+                                <p className="text-sm opacity-90">
+                                    Apne phone par install kar ke offline use karein
+                                </p>
+                            </div>
+                            <button
+                                onClick={handleInstallClick}
+                                className="px-4 py-2 bg-white text-blue-600 rounded-lg font-medium hover:bg-blue-50 transition-colors ml-3"
+                            >
+                                Install
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Profile Management */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -266,9 +374,18 @@ export default function SettingsPage() {
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Bell className="w-5 h-5 text-green-600" />
-                        Notifications
+                        Notifications (Admin ke liye)
                     </h3>
                     <div className="space-y-3">
+                        <label className="flex items-center justify-between py-2">
+                            <span className="text-sm">Enable Notifications</span>
+                            <input
+                                type="checkbox"
+                                checked={notifications.enableNotifications}
+                                onChange={() => handleNotificationToggle("enableNotifications")}
+                                className="w-5 h-5 text-blue-600 rounded"
+                            />
+                        </label>
                         <label className="flex items-center justify-between py-2">
                             <span className="text-sm">Payment Reminders</span>
                             <input
@@ -296,10 +413,30 @@ export default function SettingsPage() {
                                 className="w-5 h-5 text-blue-600 rounded"
                             />
                         </label>
+                        <label className="flex items-center justify-between py-2">
+                            <div className="flex items-center gap-2">
+                                {notifications.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                                <span className="text-sm">Sound Enabled</span>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={notifications.soundEnabled}
+                                onChange={() => handleNotificationToggle("soundEnabled")}
+                                className="w-5 h-5 text-blue-600 rounded"
+                            />
+                        </label>
+
+                        <button
+                            onClick={testNotification}
+                            className="w-full py-2.5 bg-green-50 text-green-600 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <BellRing className="w-4 h-4" />
+                            Test Notification
+                        </button>
                     </div>
                 </div>
 
-                {/* ✅ Storage Optimization */}
+                {/* Storage Optimization */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <HardDrive className="w-5 h-5 text-orange-600" />
@@ -383,7 +520,7 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex justify-between py-2">
                             <span>Storage Type</span>
-                            <span className="font-medium">IndexedDB (Optimized)</span>
+                            <span className="font-medium">IndexedDB (Ultra Optimized)</span>
                         </div>
                     </div>
                 </div>

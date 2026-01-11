@@ -1,4 +1,4 @@
-// src/app/layout.tsx - WITH AUTO-SCHEDULER INITIALIZATION
+// src/app/layout.tsx - FIXED Auto-Scheduler Import
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
@@ -56,21 +56,10 @@ export default function RootLayout({
         {/* App content */}
         {children}
 
-        {/* Service Worker + Auto-Message Scheduler */}
+        {/* Service Worker Registration */}
         <script
             dangerouslySetInnerHTML={{
                 __html: `
-              // ✅ Initialize Auto-Message Scheduler
-              (async function() {
-                try {
-                  const { autoMessageScheduler } = await import('/src/lib/autoMessageScheduler.ts');
-                  autoMessageScheduler.start();
-                  console.log('✅ Auto-message scheduler initialized');
-                } catch (err) {
-                  console.error('❌ Scheduler init failed:', err);
-                }
-              })();
-              
               // Service Worker registration
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {

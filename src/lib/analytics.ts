@@ -1,4 +1,4 @@
-// src/lib/analytics.ts
+// src/lib/analytics.ts - FIXED
 import type { Customer, Payment } from '@/types';
 
 export interface DailyData {
@@ -22,7 +22,7 @@ export interface CustomerGrowth {
 
 export const AnalyticsService = {
     /**
-     * Get daily revenue for last 30 days
+     * Get daily revenue for last N days
      */
     getDailyRevenue: (payments: Payment[], days: number = 30): DailyData[] => {
         const result: { [key: string]: DailyData } = {};

@@ -1,9 +1,9 @@
-// src/components/ProfileManager.tsx
+// src/components/ProfileManager.tsx - FIXED
 "use client";
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Edit2, X, Check } from "lucide-react";
-import { Storage } from "@/lib/storage";
+import { db } from "@/lib/db";
 import { getGradientColor } from "@/lib/utils";
 import type { Profile } from "@/types";
 
@@ -14,6 +14,7 @@ interface ProfileManagerProps {
 
 export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileManagerProps) {
     const [profiles, setProfiles] = useState<Profile[]>([]);
+    const [loading, setLoading] = useState(true);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editName, setEditName] = useState("");
     const [editDescription, setEditDescription] = useState("");
@@ -36,27 +37,31 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
         loadProfiles();
     }, []);
 
-    const loadProfiles = () => {
-        const savedProfiles = Storage.get<Profile[]>("profiles", []);
+    const loadProfiles = async () => {
+        try {
+            const savedProfiles = await db.profiles.toArray();
 
-        if (savedProfiles.length === 0) {
-            const defaultProfiles: Profile[] = [
-                {
-                    id: 1,
+            if (savedProfiles.length === 0) {
+                const defaultProfile: Profile = {
+                    id: Date.now(),
                     name: "Main Business",
                     description: "Primary business account",
                     gradient: "from-blue-500 to-purple-500",
                     createdAt: new Date().toISOString(),
-                }
-            ];
-            Storage.save("profiles", defaultProfiles);
-            setProfiles(defaultProfiles);
-        } else {
-            setProfiles(savedProfiles);
+                };
+                await db.profiles.add(defaultProfile);
+                setProfiles([defaultProfile]);
+            } else {
+                setProfiles(savedProfiles);
+            }
+        } catch (error) {
+            console.error('Error loading profiles:', error);
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleAddProfile = () => {
+    const handleAddProfile = async () => {
         if (!newName.trim()) {
             alert("Please enter profile name");
             return;
@@ -70,9 +75,8 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
             createdAt: new Date().toISOString()
         };
 
-        const updatedProfiles = [...profiles, newProfile];
-        Storage.save("profiles", updatedProfiles);
-        setProfiles(updatedProfiles);
+        await db.profiles.add(newProfile);
+        await loadProfiles();
 
         setNewName("");
         setNewDescription("");
@@ -86,34 +90,31 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
         setEditDescription(profile.description);
     };
 
-    const handleSaveEdit = (id: number) => {
+    const handleSaveEdit = async (id: number) => {
         if (!editName.trim()) {
             alert("Profile name cannot be empty");
             return;
         }
 
-        const updatedProfiles = profiles.map(p =>
-            p.id === id
-                ? { ...p, name: editName.trim(), description: editDescription.trim() }
-                : p
-        );
+        await db.profiles.update(id, {
+            name: editName.trim(),
+            description: editDescription.trim()
+        });
 
-        Storage.save("profiles", updatedProfiles);
-        setProfiles(updatedProfiles);
-
-        const currentProfile = Storage.get<Profile | null>("currentProfile", null);
+        const currentProfile = await db.getMeta<Profile | null>("currentProfile", null);
         if (currentProfile && currentProfile.id === id) {
-            const updated = updatedProfiles.find(p => p.id === id);
+            const updated = await db.profiles.get(id);
             if (updated) {
-                Storage.save("currentProfile", updated);
+                await db.setMeta("currentProfile", updated);
             }
         }
 
+        await loadProfiles();
         setEditingId(null);
         onProfilesUpdate();
     };
 
-    const handleDeleteProfile = (id: number) => {
+    const handleDeleteProfile = async (id: number) => {
         if (profiles.length === 1) {
             alert("Cannot delete the last profile!");
             return;
@@ -123,21 +124,44 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: ProfileMan
             return;
         }
 
-        const updatedProfiles = profiles.filter(p => p.id !== id);
-        Storage.save("profiles", updatedProfiles);
-        setProfiles(updatedProfiles);
+        await db.transaction('rw', db.profiles, db.customers, db.payments, async () => {
+            await db.profiles.delete(id);
+            await db.customers.where('profileId').equals(id).delete();
 
-        const currentProfile = Storage.get<Profile | null>("currentProfile", null);
+            const customerIds = await db.customers
+                .where('profileId')
+                .equals(id)
+                .primaryKeys();
+
+            if (customerIds.length > 0) {
+                await db.payments
+                    .where('customerId')
+                    .anyOf(customerIds as number[])
+                    .delete();
+            }
+        });
+
+        const currentProfile = await db.getMeta<Profile | null>("currentProfile", null);
         if (currentProfile && currentProfile.id === id) {
-            Storage.save("currentProfile", updatedProfiles[0]);
+            const remaining = await db.profiles.toArray();
+            if (remaining[0]) {
+                await db.setMeta("currentProfile", remaining[0]);
+            }
         }
 
-        const allCustomers = Storage.get("customers", []);
-        const filteredCustomers = allCustomers.filter((c: any) => c.profileId !== id);
-        Storage.save("customers", filteredCustomers);
-
+        await loadProfiles();
         onProfilesUpdate();
     };
+
+    if (loading) {
+        return (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="bg-white rounded-3xl p-6">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
