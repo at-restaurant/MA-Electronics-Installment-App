@@ -1,5 +1,3 @@
-// src/app/settings/page.tsx - PRODUCTION FIXED
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -199,7 +197,7 @@ export default function SettingsPage() {
             const filename = `ma-electronics-backup-${timestamp}.json`;
 
             // Check if File System Access API is available (for folder selection)
-            if ('showSaveFilePicker' in window) {
+            if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
                 try {
                     const handle = await (window as any).showSaveFilePicker({
                         suggestedName: filename,
@@ -445,7 +443,7 @@ export default function SettingsPage() {
                     </h3>
 
                     {/* Permission Status */}
-                    {'Notification' in window && (
+                    {typeof window !== 'undefined' && 'Notification' in window && (
                         <div className={`mb-4 p-3 rounded-lg border-2 ${
                             Notification.permission === 'granted'
                                 ? 'bg-green-50 border-green-200'

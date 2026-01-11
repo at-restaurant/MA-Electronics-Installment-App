@@ -1,5 +1,3 @@
-// src/app/customers/[id]/page.tsx - VIEW + NOTIFICATIONS
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,13 +5,12 @@ import { useRouter, useParams } from 'next/navigation';
 import {
     Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
     DollarSign, History, FileText, CheckCircle, X, UserCheck,
-    Image as ImageIcon, MessageSquare
+    Image as ImageIcon
 } from 'lucide-react';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import GlobalHeader from '@/components/GlobalHeader';
 import { db } from '@/lib/db';
 import { WhatsAppService } from '@/lib/whatsapp-unified';
-import { NotificationScheduler } from '@/lib/notificationScheduler';
 import { useProfile, useModal } from '@/hooks/useCompact';
 import {
     formatCurrency,
@@ -59,12 +56,14 @@ export default function CustomerDetailPage() {
         if (!customer) return;
 
         const amount = parseFloat(paymentAmount);
+
         if (!amount || amount <= 0) {
             alert('Please enter a valid amount');
             return;
         }
 
         const remaining = customer.totalAmount - customer.paidAmount;
+
         if (amount > remaining) {
             if (!confirm('Payment exceeds remaining balance. Continue?')) return;
         }
@@ -77,9 +76,6 @@ export default function CustomerDetailPage() {
                 paymentSource,
             });
 
-            // ✅ SEND PAYMENT NOTIFICATION
-            await NotificationScheduler.notifyPaymentReceived(customer.name, amount);
-
             await loadCustomer();
             setPaymentAmount('');
             setPaymentSource('offline');
@@ -87,9 +83,6 @@ export default function CustomerDetailPage() {
 
             const updatedCustomer = await db.customers.get(customerId);
             if (updatedCustomer && updatedCustomer.paidAmount >= updatedCustomer.totalAmount) {
-                // ✅ SEND COMPLETION NOTIFICATION
-                await NotificationScheduler.notifyCompletion(updatedCustomer.name);
-
                 if (confirm('Payment completed! 🎉 Send congratulations via WhatsApp?')) {
                     WhatsAppService.sendCompletion(updatedCustomer);
                 }
@@ -114,6 +107,7 @@ export default function CustomerDetailPage() {
 
     const handleDelete = async () => {
         if (!customer) return;
+
         if (!confirm('Delete this customer? All data will be lost!')) return;
         if (!confirm('Last warning! This action is PERMANENT.')) return;
 
@@ -130,15 +124,7 @@ export default function CustomerDetailPage() {
         }
     };
 
-    const toggleAutoMessaging = async () => {
-        if (!customer) return;
-
-        const updated = !customer.autoMessaging;
-        await db.customers.update(customer.id, { autoMessaging: updated });
-        await loadCustomer();
-
-        alert(updated ? '✅ Auto-messages enabled' : '⏹️ Auto-messages disabled');
-    };
+    // NOTE: Auto WhatsApp toggle removed as requested
 
     if (loading || !customer || !profile) {
         return (
@@ -270,36 +256,11 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* Auto WhatsApp toggle */}
-                <button
-                    onClick={toggleAutoMessaging}
-                    className={`w-full p-4 rounded-xl border-2 transition-all ${
-                        customer.autoMessaging
-                            ? 'bg-green-50 border-green-500'
-                            : 'bg-gray-50 border-gray-300'
-                    }`}
-                >
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <MessageSquare className={`w-6 h-6 ${customer.autoMessaging ? 'text-green-600' : 'text-gray-400'}`} />
-                            <div className="text-left">
-                                <p className="font-semibold">Auto WhatsApp Messages</p>
-                                <p className="text-sm text-gray-600">
-                                    {customer.autoMessaging ? 'Enabled ✓' : 'Disabled'}
-                                </p>
-                            </div>
-                        </div>
-                        <div className={`w-12 h-6 rounded-full transition-all ${customer.autoMessaging ? 'bg-green-500' : 'bg-gray-300'}`}>
-                            <div className={`w-5 h-5 bg-white rounded-full m-0.5 transition-transform ${customer.autoMessaging ? 'translate-x-6' : ''}`} />
-                        </div>
-                    </div>
-                </button>
-
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                         onClick={() => paymentModal.show()}
                         disabled={isCompleted}
-                        className={`py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                        className={`w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
                             isCompleted
                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                 : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30'
@@ -312,11 +273,11 @@ export default function CustomerDetailPage() {
                         customer={customer}
                         type={daysOverdue > 7 ? 'overdue' : 'reminder'}
                         daysOverdue={daysOverdue}
-                        className="py-3 px-4 shadow-lg shadow-green-500/30"
+                        className="py-3 px-4 shadow-lg shadow-green-500/30 w-full"
                     />
                 </div>
 
-                {/* Guarantors */}
+                {/* ✅ GUARANTORS - VIEW ONLY (Edit pe click karne par edit page khul jayega) */}
                 {customer.guarantors && customer.guarantors.length > 0 && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -330,6 +291,7 @@ export default function CustomerDetailPage() {
                                     className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200"
                                 >
                                     <div className="flex items-start gap-3">
+                                        {/* Photos */}
                                         <div className="flex gap-2 flex-shrink-0">
                                             {g.photos && g.photos.length > 0 ? (
                                                 <>
@@ -353,6 +315,8 @@ export default function CustomerDetailPage() {
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* Info */}
                                         <div className="flex-1 min-w-0">
                                             <p className="font-semibold text-base truncate">{g.name}</p>
                                             <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
@@ -383,16 +347,32 @@ export default function CustomerDetailPage() {
                     </div>
                 )}
 
-                {/* Notes */}
-                {customer.notes && (
-                    <div className="bg-white rounded-2xl p-4 shadow-sm">
-                        <h3 className="font-semibold mb-2 flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-blue-600" />
-                            Notes
-                        </h3>
-                        <p className="text-gray-700 whitespace-pre-wrap">{customer.notes}</p>
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-blue-600" />
+                        Installment Details
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <p className="text-sm text-gray-500">Installment Amount</p>
+                            <p className="font-semibold">{formatCurrency(customer.installmentAmount)}</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500">Frequency</p>
+                            <p className="font-semibold capitalize">{customer.frequency}</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500">Last Payment</p>
+                            <p className="font-semibold">{formatDate(customer.lastPayment)}</p>
+                        </div>
+                        <div>
+                            <p className="text-sm text-gray-500">Days Since</p>
+                            <p className={`font-semibold ${daysOverdue > 7 ? 'text-red-600' : 'text-gray-900'}`}>
+                                {daysOverdue} days
+                            </p>
+                        </div>
                     </div>
-                )}
+                </div>
 
                 {/* Payment History */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -430,6 +410,16 @@ export default function CustomerDetailPage() {
                         </div>
                     )}
                 </div>
+
+                {customer.notes && (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                        <h3 className="font-semibold mb-2 flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-blue-600" />
+                            Notes
+                        </h3>
+                        <p className="text-gray-700 whitespace-pre-wrap">{customer.notes}</p>
+                    </div>
+                )}
             </div>
 
             {/* Payment Modal */}
