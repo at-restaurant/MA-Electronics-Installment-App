@@ -97,7 +97,7 @@ export default function RootLayout({
               
               // Initialize notification scheduler
               if ('Notification' in window) {
-                import('/src/lib/notificationScheduler.js').then(module => {
+                import('@/lib/notificationScheduler.js').then(module => {
                   module.NotificationScheduler.start();
                 });
               }
