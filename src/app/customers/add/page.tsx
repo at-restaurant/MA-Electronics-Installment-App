@@ -1,4 +1,4 @@
-// src/app/customers/add/page.tsx - MULTIPLE DOCUMENTS & IMAGES
+// src/app/customers/add/page.tsx - FIXED GUARANTOR MULTIPLE IMAGES
 
 'use client';
 
@@ -30,17 +30,18 @@ export default function AddCustomerPage() {
         notes: '',
     });
 
-    // ✅ MULTIPLE IMAGES STATE
+    // ✅ MULTIPLE CUSTOMER DOCUMENTS
     const [documents, setDocuments] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
 
+    // ✅ GUARANTORS WITH MULTIPLE PHOTOS SUPPORT
     const [guarantors, setGuarantors] = useState<(Guarantor & { id: number })[]>([]);
     const [showGuarantorForm, setShowGuarantorForm] = useState(false);
     const [guarantorForm, setGuarantorForm] = useState({
         name: '',
         phone: '',
         cnic: '',
-        photo: null as string | null,
+        photos: [] as string[], // ✅ CHANGED TO ARRAY
         relation: '',
     });
 
@@ -145,9 +146,6 @@ export default function AddCustomerPage() {
             if (field === 'photo') {
                 compressed = await ImageCompression.compressProfile(file);
                 setForm((prev) => ({ ...prev, photo: compressed }));
-            } else if (field === 'guarantorPhoto') {
-                compressed = await ImageCompression.compressGuarantor(file);
-                setGuarantorForm((prev) => ({ ...prev, photo: compressed }));
             }
         } catch (error) {
             console.error('Image compression failed:', error);
@@ -157,7 +155,7 @@ export default function AddCustomerPage() {
         }
     };
 
-    // ✅ MULTIPLE DOCUMENTS UPLOAD (CNIC, Bills, etc.)
+    // ✅ MULTIPLE CUSTOMER DOCUMENTS UPLOAD
     const handleDocumentsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -175,13 +173,11 @@ export default function AddCustomerPage() {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
 
-                // Validate size (max 5MB per file)
                 if (file.size > 5 * 1024 * 1024) {
                     alert(`${file.name} is too large (max 5MB)`);
                     continue;
                 }
 
-                // Compress image
                 const compressed = await ImageCompression.compressCNIC(file);
                 newDocs.push(compressed);
             }
@@ -195,9 +191,57 @@ export default function AddCustomerPage() {
         }
     };
 
-    // ✅ REMOVE DOCUMENT
+    // ✅ REMOVE CUSTOMER DOCUMENT
     const removeDocument = (index: number) => {
         setDocuments(documents.filter((_, i) => i !== index));
+    };
+
+    // ✅ GUARANTOR MULTIPLE PHOTOS UPLOAD
+    const handleGuarantorPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        if (guarantorForm.photos.length + files.length > 5) {
+            alert('Maximum 5 photos per guarantor');
+            return;
+        }
+
+        setUploading(true);
+
+        try {
+            const newPhotos: string[] = [];
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+
+                const validation = ImageCompression.validateFile(file);
+                if (!validation.valid) {
+                    alert(`${file.name}: ${validation.error}`);
+                    continue;
+                }
+
+                const compressed = await ImageCompression.compressGuarantor(file);
+                newPhotos.push(compressed);
+            }
+
+            setGuarantorForm((prev) => ({
+                ...prev,
+                photos: [...prev.photos, ...newPhotos],
+            }));
+        } catch (error) {
+            console.error('Photo upload failed:', error);
+            alert('Failed to upload photos');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // ✅ REMOVE GUARANTOR PHOTO
+    const removeGuarantorPhoto = (index: number) => {
+        setGuarantorForm((prev) => ({
+            ...prev,
+            photos: prev.photos.filter((_, i) => i !== index),
+        }));
     };
 
     const addGuarantor = () => {
@@ -208,12 +252,16 @@ export default function AddCustomerPage() {
 
         const newGuarantor: Guarantor & { id: number } = {
             id: Date.now(),
-            ...guarantorForm,
-            photos: guarantorForm.photo ? [guarantorForm.photo] : [],
+            name: guarantorForm.name,
+            phone: guarantorForm.phone,
+            cnic: guarantorForm.cnic,
+            photos: guarantorForm.photos, // ✅ MULTIPLE PHOTOS
+            photo: guarantorForm.photos.length > 0 ? guarantorForm.photos[0] : null, // First photo as main
+            relation: guarantorForm.relation,
         };
 
         setGuarantors([...guarantors, newGuarantor]);
-        setGuarantorForm({ name: '', phone: '', cnic: '', photo: null, relation: '' });
+        setGuarantorForm({ name: '', phone: '', cnic: '', photos: [], relation: '' });
         setShowGuarantorForm(false);
     };
 
@@ -236,8 +284,8 @@ export default function AddCustomerPage() {
                 address: form.address,
                 cnic: form.cnic,
                 photo: form.photo,
-                cnicPhoto: documents.length > 0 ? documents[0] : null, // First doc as main CNIC
-                cnicPhotos: documents, // ✅ ALL DOCUMENTS
+                cnicPhoto: documents.length > 0 ? documents[0] : null,
+                cnicPhotos: documents,
                 document: null,
                 totalAmount: parseFloat(form.totalAmount),
                 installmentAmount: parseFloat(form.installmentAmount),
@@ -301,7 +349,6 @@ export default function AddCustomerPage() {
                                 </label>
                             </div>
                             <p className="text-white mt-3 text-sm font-medium">Customer Photo (Optional)</p>
-                            {uploading && <p className="text-white text-xs mt-1">Compressing...</p>}
                         </div>
                     </div>
 
@@ -365,14 +412,13 @@ export default function AddCustomerPage() {
                             />
                         </div>
 
-                        {/* ✅ MULTIPLE DOCUMENTS UPLOAD */}
+                        {/* Customer Documents */}
                         <div>
                             <label className="block text-sm font-medium mb-2 flex items-center gap-2">
                                 <FileText className="w-4 h-4 text-blue-600" />
-                                Documents (CNIC, Bills, Agreement, etc.) - Max 10
+                                Documents (CNIC, Bills, Agreement) - Max 10
                             </label>
 
-                            {/* Document Grid */}
                             {documents.length > 0 && (
                                 <div className="grid grid-cols-3 gap-2 mb-3">
                                     {documents.map((doc, index) => (
@@ -395,7 +441,6 @@ export default function AddCustomerPage() {
                                 </div>
                             )}
 
-                            {/* Upload Button */}
                             {documents.length < 10 && (
                                 <label className={`w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 cursor-pointer transition-colors flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}>
                                     <Upload className="w-5 h-5 text-gray-400" />
@@ -412,9 +457,6 @@ export default function AddCustomerPage() {
                                     />
                                 </label>
                             )}
-                            <p className="text-xs text-gray-500 mt-1">
-                                💡 CNIC front/back, bills, agreement, guarantor docs
-                            </p>
                         </div>
 
                         {/* Payment Details */}
@@ -449,7 +491,6 @@ export default function AddCustomerPage() {
                                 </div>
                             </div>
 
-                            {/* Quick Plans */}
                             {plans.length > 0 && (
                                 <div className="mb-3">
                                     <label className="block text-sm font-medium mb-2 flex items-center gap-2">
@@ -497,7 +538,7 @@ export default function AddCustomerPage() {
                             </div>
                         </div>
 
-                        {/* Guarantors */}
+                        {/* ✅ GUARANTORS WITH MULTIPLE PHOTOS */}
                         <div className="border-t pt-4">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="font-semibold flex items-center gap-2">
@@ -517,12 +558,31 @@ export default function AddCustomerPage() {
                                 <div className="space-y-2 mb-3">
                                     {guarantors.map((g) => (
                                         <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                                            {g.photo && <img src={g.photo} alt={g.name} className="w-10 h-10 rounded-full object-cover" />}
+                                            <div className="flex gap-1">
+                                                {g.photos.slice(0, 3).map((photo, idx) => (
+                                                    <img
+                                                        key={idx}
+                                                        src={photo}
+                                                        alt={`${g.name} ${idx + 1}`}
+                                                        className="w-10 h-10 rounded-full object-cover border-2 border-white"
+                                                    />
+                                                ))}
+                                                {g.photos.length > 3 && (
+                                                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-xs text-purple-600 font-bold">
+                                                        +{g.photos.length - 3}
+                                                    </div>
+                                                )}
+                                            </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-medium text-sm truncate">{g.name}</p>
                                                 <p className="text-xs text-gray-500">{g.phone}</p>
+                                                <p className="text-xs text-purple-600">{g.photos.length} photos</p>
                                             </div>
-                                            <button type="button" onClick={() => removeGuarantor(g.id)} className="p-1 text-red-500 hover:bg-red-50 rounded">
+                                            <button
+                                                type="button"
+                                                onClick={() => removeGuarantor(g.id)}
+                                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>
@@ -560,19 +620,52 @@ export default function AddCustomerPage() {
                                             className="px-3 py-2 border rounded-lg"
                                         />
                                     </div>
-                                    <label className={`flex items-center gap-2 p-3 border-2 border-dashed rounded-lg hover:border-purple-500 cursor-pointer ${uploading ? 'opacity-50' : ''}`}>
-                                        <Camera className="w-5 h-5 text-gray-400" />
-                                        <span className="text-sm text-gray-600">
-                                            {uploading ? 'Compressing...' : guarantorForm.photo ? 'Photo added ✓' : 'Add Photo'}
-                                        </span>
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={(e) => handleImageUpload(e, 'guarantorPhoto')}
-                                            disabled={uploading}
-                                        />
-                                    </label>
+
+                                    {/* ✅ MULTIPLE PHOTOS SECTION */}
+                                    <div>
+                                        <label className="block text-xs font-medium mb-2 text-purple-700">
+                                            Photos (Max 5) - CNIC, Documents
+                                        </label>
+
+                                        {guarantorForm.photos.length > 0 && (
+                                            <div className="grid grid-cols-3 gap-2 mb-2">
+                                                {guarantorForm.photos.map((photo, index) => (
+                                                    <div key={index} className="relative group">
+                                                        <img
+                                                            src={photo}
+                                                            alt={`Photo ${index + 1}`}
+                                                            className="w-full h-20 object-cover rounded-lg border-2 border-purple-200"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeGuarantorPhoto(index)}
+                                                            className="absolute -top-1 -right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {guarantorForm.photos.length < 5 && (
+                                            <label className={`flex items-center gap-2 p-3 border-2 border-dashed rounded-lg hover:border-purple-500 cursor-pointer ${uploading ? 'opacity-50' : ''}`}>
+                                                <Camera className="w-5 h-5 text-gray-400" />
+                                                <span className="text-sm text-gray-600">
+                                                    {uploading ? 'Uploading...' : `Upload Photos (${guarantorForm.photos.length}/5)`}
+                                                </span>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    multiple
+                                                    className="hidden"
+                                                    onChange={handleGuarantorPhotosUpload}
+                                                    disabled={uploading}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+
                                     <button
                                         type="button"
                                         onClick={addGuarantor}
