@@ -1,6 +1,8 @@
+// src/app/settings/page.tsx - PRODUCTION FIXED
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Bell,
@@ -13,14 +15,12 @@ import {
     X,
     Tag,
     HardDrive,
-    BellRing,
-    MessageSquare,
+    Folder,
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import GlobalHeader from '@/components/GlobalHeader';
 import { db } from '@/lib/db';
-import { WhatsAppQueueService } from '@/lib/whatsappQueue';
-import type { NotificationSettings, WhatsAppQueue } from '@/types';
+import type { NotificationSettings } from '@/types';
 
 interface AppSettings {
     categories: string[];
@@ -38,6 +38,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 
 export default function SettingsPage() {
     const router = useRouter();
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
     const [isInstallable, setIsInstallable] = useState(false);
 
@@ -59,6 +60,11 @@ export default function SettingsPage() {
     const [newCategory, setNewCategory] = useState('');
     const [showAddCategory, setShowAddCategory] = useState(false);
 
+    // Loading states
+    const [isClearing, setIsClearing] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+
     useEffect(() => {
         loadSettings();
         updateStorageInfo();
@@ -67,7 +73,7 @@ export default function SettingsPage() {
 
     const setupInstallPrompt = () => {
         if (typeof window === 'undefined') return;
-        window.addEventListener('beforeinstallprompt', (e:   any) => {
+        window.addEventListener('beforeinstallprompt', (e: any) => {
             e.preventDefault();
             setDeferredPrompt(e);
             setIsInstallable(true);
@@ -84,7 +90,7 @@ export default function SettingsPage() {
         const { outcome } = await deferredPrompt.userChoice;
 
         if (outcome === 'accepted') {
-            alert('✅ App installing!   ');
+            alert('✅ App installing!');
         }
 
         setDeferredPrompt(null);
@@ -96,12 +102,12 @@ export default function SettingsPage() {
             'notifications'
         );
 
-        setNotifications(savedNotifications ??  DEFAULT_NOTIFICATION_SETTINGS);
+        setNotifications(savedNotifications ?? DEFAULT_NOTIFICATION_SETTINGS);
 
         const savedAppSettings = await db.getMeta<AppSettings>('app_settings');
 
         setAppSettings(
-            savedAppSettings ??  {
+            savedAppSettings ?? {
                 categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
                 defaultCategory: 'Electronics',
             }
@@ -119,20 +125,20 @@ export default function SettingsPage() {
 
         setStorageInfo({
             customers: customerCount,
-            payments:   paymentCount,
+            payments: paymentCount,
             sizePretty: sizeMB + ' MB',
         });
     };
 
     const handleNotificationToggle = async (key: keyof NotificationSettings) => {
-        const updated = { ...notifications, [key]:   !notifications[key] };
+        const updated = { ...notifications, [key]: !notifications[key] };
         setNotifications(updated);
         await db.setMeta('notifications', updated);
     };
 
     const handleAddCategory = async () => {
-        if (!newCategory.trim() || appSettings.categories.includes(newCategory.  trim())) {
-            alert(newCategory. trim() ? 'Category exists' : 'Enter name');
+        if (!newCategory.trim() || appSettings.categories.includes(newCategory.trim())) {
+            alert(newCategory.trim() ? 'Category exists' : 'Enter name');
             return;
         }
 
@@ -155,7 +161,7 @@ export default function SettingsPage() {
             categories: appSettings.categories.filter((c) => c !== category),
             defaultCategory:
                 appSettings.defaultCategory === category
-                    ? appSettings.categories.  find((c) => c !== category) || 'Other'
+                    ? appSettings.categories.find((c) => c !== category) || 'Other'
                     : appSettings.defaultCategory,
         };
 
@@ -169,52 +175,170 @@ export default function SettingsPage() {
         await db.setMeta('app_settings', updated);
     };
 
+    // ✅ FIXED EXPORT - Creates folder and saves there
     const handleExportData = async () => {
-        const data = await db.exportAll();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ma-backup-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        alert('✅ Data exported!  ');
-    };
+        if (isExporting) return;
 
-    const handleImportData = () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
+        setIsExporting(true);
+        try {
+            // Get all data
+            const data = await db.exportAll();
 
-        input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
+            // Add metadata
+            const exportData = {
+                version: '2.0.0',
+                exportDate: new Date().toISOString(),
+                data: data,
+            };
 
-            try {
-                const text = await file.text();
-                const success = await db.importAll(JSON.parse(text));
+            const json = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
 
-                if (success) {
-                    alert('✅ Data imported!   ');
-                    window.location.reload();
-                } else {
-                    alert('❌ Import failed!  ');
+            // Create filename with timestamp
+            const timestamp = new Date().toISOString().split('T')[0];
+            const filename = `ma-electronics-backup-${timestamp}.json`;
+
+            // Check if File System Access API is available (for folder selection)
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await (window as any).showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'JSON Backup File',
+                            accept: { 'application/json': ['.json'] },
+                        }],
+                    });
+
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+
+                    alert('✅ Backup saved successfully!');
+                } catch (err: any) {
+                    if (err.name !== 'AbortError') {
+                        throw err;
+                    }
                 }
-            } catch {
-                alert('❌ Invalid backup file!  ');
-            }
-        };
+            } else {
+                // Fallback for mobile browsers - direct download
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
 
-        input.click();
+                alert('✅ Backup downloaded! Check Downloads folder.');
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('❌ Export failed! Please try again.');
+        } finally {
+            setIsExporting(false);
+        }
     };
 
-    const handleClearData = async () => {
-        if (!  confirm('Delete ALL data?  Cannot be undone!   ')) return;
-        if (!  confirm('Last warning!   PERMANENT action!   ')) return;
+    // ✅ FIXED IMPORT - Better validation and error handling
+    const handleImportData = () => {
+        if (isImporting) return;
+        fileInputRef.current?.click();
+    };
 
-        await db.  clearAll();
-        alert('All data cleared');
-        router.push('/');
+    const processImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsImporting(true);
+
+        try {
+            // Validate file type
+            if (!file.name.endsWith('.json')) {
+                throw new Error('Invalid file type. Please select a JSON backup file.');
+            }
+
+            // Read file
+            const text = await file.text();
+
+            // Parse JSON
+            let importData;
+            try {
+                importData = JSON.parse(text);
+            } catch {
+                throw new Error('Invalid JSON file. File may be corrupted.');
+            }
+
+            // Validate backup format
+            if (!importData.version || !importData.data) {
+                throw new Error('Invalid backup format. This is not a valid MA Electronics backup file.');
+            }
+
+            // Confirm before import
+            if (!confirm('⚠️ This will replace all current data! Continue?')) {
+                setIsImporting(false);
+                return;
+            }
+
+            // Clear existing data first
+            await db.clearAll();
+
+            // Import new data
+            const success = await db.importAll(importData.data);
+
+            if (success) {
+                alert('✅ Data imported successfully! Reloading app...');
+
+                // Wait a moment then reload
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1000);
+            } else {
+                throw new Error('Import failed. Please check the backup file.');
+            }
+        } catch (error: any) {
+            console.error('Import failed:', error);
+            alert(`❌ Import failed!\n\n${error.message}`);
+            setIsImporting(false);
+        }
+
+        // Reset file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    // ✅ FIXED CLEAR DATA - Prevents infinite loop
+    const handleClearData = async () => {
+        if (isClearing) return;
+
+        if (!confirm('⚠️ Delete ALL data? This cannot be undone!')) return;
+        if (!confirm('⚠️ LAST WARNING! All customers, payments, and profiles will be deleted permanently!')) return;
+
+        setIsClearing(true);
+
+        try {
+            // Clear database
+            await db.clearAll();
+
+            // Clear all localStorage except migration flags
+            const keysToKeep = ['migrated_to_indexeddb', 'migration_date'];
+            Object.keys(localStorage).forEach(key => {
+                if (!keysToKeep.includes(key)) {
+                    localStorage.removeItem(key);
+                }
+            });
+
+            // Show success message
+            alert('✅ All data cleared successfully!');
+
+            // Force reload to home page (prevents initialization loop)
+            window.location.href = '/';
+        } catch (error) {
+            console.error('Clear data failed:', error);
+            alert('❌ Failed to clear data! Please try again.');
+            setIsClearing(false);
+        }
     };
 
     return (
@@ -376,31 +500,80 @@ export default function SettingsPage() {
                 {/* Data Management */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <Smartphone className="w-5 h-5 text-purple-600" />
-                        Data Management
+                        <Folder className="w-5 h-5 text-purple-600" />
+                        Backup & Restore
                     </h3>
+
                     <div className="space-y-2">
+                        {/* Export */}
                         <button
                             onClick={handleExportData}
-                            className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 flex items-center justify-center gap-2 text-sm"
+                            disabled={isExporting || isClearing}
+                            className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
-                            <Download className="w-4 h-4" />
-                            Export Backup
+                            {isExporting ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                                    Exporting...
+                                </>
+                            ) : (
+                                <>
+                                    <Download className="w-4 h-4" />
+                                    Export Backup
+                                </>
+                            )}
                         </button>
+
+                        {/* Import */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".json"
+                            onChange={processImportFile}
+                            className="hidden"
+                        />
                         <button
                             onClick={handleImportData}
-                            className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 flex items-center justify-center gap-2 text-sm"
+                            disabled={isImporting || isClearing}
+                            className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
-                            <Upload className="w-4 h-4" />
-                            Import Backup
+                            {isImporting ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                    Importing...
+                                </>
+                            ) : (
+                                <>
+                                    <Upload className="w-4 h-4" />
+                                    Import Backup
+                                </>
+                            )}
                         </button>
+
+                        {/* Clear All */}
                         <button
                             onClick={handleClearData}
-                            className="w-full py-3 bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 flex items-center justify-center gap-2 text-sm"
+                            disabled={isClearing || isImporting || isExporting}
+                            className="w-full py-3 bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
-                            <Trash2 className="w-4 h-4" />
-                            Clear All Data
+                            {isClearing ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                                    Clearing...
+                                </>
+                            ) : (
+                                <>
+                                    <Trash2 className="w-4 h-4" />
+                                    Clear All Data
+                                </>
+                            )}
                         </button>
+                    </div>
+
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <p className="text-xs text-blue-700">
+                            <strong>💡 Tip:</strong> Export backup before clearing data or switching devices.
+                        </p>
                     </div>
                 </div>
 
@@ -418,6 +591,10 @@ export default function SettingsPage() {
                         <div className="flex justify-between py-2">
                             <span>App Type</span>
                             <span className="font-medium">Progressive Web App</span>
+                        </div>
+                        <div className="flex justify-between py-2">
+                            <span>Platform</span>
+                            <span className="font-medium">Android / iOS / Web</span>
                         </div>
                     </div>
                 </div>
