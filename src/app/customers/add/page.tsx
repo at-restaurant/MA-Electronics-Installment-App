@@ -1,4 +1,4 @@
-// src/app/customers/add/page.tsx - FIXED GUARANTOR MULTIPLE IMAGES
+// src/app/customers/add/page.tsx - WHATSAPP AUTO-SEND REMOVED
 
 'use client';
 
@@ -30,18 +30,16 @@ export default function AddCustomerPage() {
         notes: '',
     });
 
-    // ✅ MULTIPLE CUSTOMER DOCUMENTS
     const [documents, setDocuments] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
 
-    // ✅ GUARANTORS WITH MULTIPLE PHOTOS SUPPORT
     const [guarantors, setGuarantors] = useState<(Guarantor & { id: number })[]>([]);
     const [showGuarantorForm, setShowGuarantorForm] = useState(false);
     const [guarantorForm, setGuarantorForm] = useState({
         name: '',
         phone: '',
         cnic: '',
-        photos: [] as string[], // ✅ CHANGED TO ARRAY
+        photos: [] as string[],
         relation: '',
     });
 
@@ -127,7 +125,6 @@ export default function AddCustomerPage() {
         return end.toISOString().split('T')[0];
     };
 
-    // ✅ PROFILE PHOTO UPLOAD
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -155,7 +152,6 @@ export default function AddCustomerPage() {
         }
     };
 
-    // ✅ MULTIPLE CUSTOMER DOCUMENTS UPLOAD
     const handleDocumentsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -191,12 +187,10 @@ export default function AddCustomerPage() {
         }
     };
 
-    // ✅ REMOVE CUSTOMER DOCUMENT
     const removeDocument = (index: number) => {
         setDocuments(documents.filter((_, i) => i !== index));
     };
 
-    // ✅ GUARANTOR MULTIPLE PHOTOS UPLOAD
     const handleGuarantorPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -236,7 +230,6 @@ export default function AddCustomerPage() {
         }
     };
 
-    // ✅ REMOVE GUARANTOR PHOTO
     const removeGuarantorPhoto = (index: number) => {
         setGuarantorForm((prev) => ({
             ...prev,
@@ -255,8 +248,8 @@ export default function AddCustomerPage() {
             name: guarantorForm.name,
             phone: guarantorForm.phone,
             cnic: guarantorForm.cnic,
-            photos: guarantorForm.photos, // ✅ MULTIPLE PHOTOS
-            photo: guarantorForm.photos.length > 0 ? guarantorForm.photos[0] : null, // First photo as main
+            photos: guarantorForm.photos,
+            photo: guarantorForm.photos.length > 0 ? guarantorForm.photos[0] : null,
             relation: guarantorForm.relation,
         };
 
@@ -298,13 +291,17 @@ export default function AddCustomerPage() {
                 status: 'active',
                 createdAt: new Date().toISOString(),
                 category: form.category,
-                autoMessaging: false,
+                autoMessaging: false, // ❌ No auto WhatsApp
                 guarantors,
                 autoSchedule: true,
                 tags: [],
             };
 
             await db.customers.add(customer);
+
+            // ✅ Simple success message - NO WhatsApp logic
+            alert('✅ Customer added successfully!');
+
             router.push('/customers');
         } catch (error) {
             console.error('Failed to save customer:', error);
@@ -538,7 +535,7 @@ export default function AddCustomerPage() {
                             </div>
                         </div>
 
-                        {/* ✅ GUARANTORS WITH MULTIPLE PHOTOS */}
+                        {/* Guarantors */}
                         <div className="border-t pt-4">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="font-semibold flex items-center gap-2">
@@ -621,7 +618,6 @@ export default function AddCustomerPage() {
                                         />
                                     </div>
 
-                                    {/* ✅ MULTIPLE PHOTOS SECTION */}
                                     <div>
                                         <label className="block text-xs font-medium mb-2 text-purple-700">
                                             Photos (Max 5) - CNIC, Documents
