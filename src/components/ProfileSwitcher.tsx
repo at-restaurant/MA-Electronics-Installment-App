@@ -1,4 +1,4 @@
-// src/components/ProfileSwitcher.tsx
+// src/components/ProfileSwitcher.tsx - FIXED with async loading
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -33,8 +33,8 @@ export default function ProfileSwitcher({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const loadProfiles = () => {
-        const savedProfiles = Storage.get<Profile[]>("profiles", []);
+    const loadProfiles = async () => {
+        const savedProfiles = await Storage.get<Profile[]>("profiles", []);
 
         if (savedProfiles.length === 0) {
             const defaultProfiles: Profile[] = [
@@ -45,30 +45,16 @@ export default function ProfileSwitcher({
                     gradient: "from-blue-500 to-purple-500",
                     createdAt: new Date().toISOString(),
                 },
-                {
-                    id: 2,
-                    name: "Side Business",
-                    description: "Secondary income",
-                    gradient: "from-green-500 to-teal-500",
-                    createdAt: new Date().toISOString(),
-                },
-                {
-                    id: 3,
-                    name: "Personal",
-                    description: "Personal loans",
-                    gradient: "from-orange-500 to-red-500",
-                    createdAt: new Date().toISOString(),
-                },
             ];
-            Storage.save("profiles", defaultProfiles);
+            await Storage.save("profiles", defaultProfiles);
             setProfiles(defaultProfiles);
         } else {
             setProfiles(savedProfiles);
         }
     };
 
-    const handleProfileSwitch = (profile: Profile) => {
-        Storage.save("currentProfile", profile);
+    const handleProfileSwitch = async (profile: Profile) => {
+        await Storage.save("currentProfile", profile);
         setIsOpen(false);
 
         if (onProfileChange) {

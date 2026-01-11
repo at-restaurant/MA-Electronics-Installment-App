@@ -1,4 +1,5 @@
-// src/app/pending/page.tsx
+// src/app/pending/page.tsx - FIXED
+
 "use client";
 
 import { AlertCircle, Clock, MessageSquare } from "lucide-react";
@@ -25,21 +26,21 @@ export default function PendingPage() {
 
     useEffect(() => {
         loadData();
-    }, [router]);
+    }, []);
 
-    const loadData = () => {
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+    const loadData = async () => {
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
             return;
         }
 
         setCurrentProfile(profile);
-        loadPendingCustomers(profile.id);
+        await loadPendingCustomers(profile.id);
     };
 
-    const loadPendingCustomers = (profileId: number) => {
-        const allCustomers = Storage.get<Customer[]>("customers", []);
+    const loadPendingCustomers = async (profileId: number) => {
+        const allCustomers = await Storage.get<Customer[]>("customers", []);
 
         const pending = allCustomers
             .filter((c) => c.profileId === profileId && c.paidAmount < c.totalAmount)
@@ -81,7 +82,7 @@ export default function PendingPage() {
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Loading...</p>
+                    <p className="text-gray-600">Load ho raha hai...</p>
                 </div>
             </div>
         );
@@ -93,9 +94,9 @@ export default function PendingPage() {
             <div className="bg-white border-b px-4 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                     <div>
-                        <h1 className="text-2xl font-bold">Pending Payments</h1>
+                        <h1 className="text-2xl font-bold">Baqi Payments</h1>
                         <p className="text-sm text-gray-600">
-                            {pendingCustomers.length} customer{pendingCustomers.length !== 1 ? "s" : ""} with pending payments
+                            {pendingCustomers.length} customer{pendingCustomers.length !== 1 ? "s" : ""} ki baqi hai
                         </p>
                     </div>
                     <ProfileSwitcher
@@ -111,7 +112,7 @@ export default function PendingPage() {
                     <div className="bg-white rounded-xl p-4 text-center shadow-sm">
                         <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-2" />
                         <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
-                        <p className="text-xs text-gray-600">Overdue</p>
+                        <p className="text-xs text-gray-600">Zyada Dair</p>
                     </div>
 
                     <div className="bg-white rounded-xl p-4 text-center shadow-sm">
@@ -131,11 +132,11 @@ export default function PendingPage() {
                 <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white shadow-lg">
                     <div className="flex items-center gap-2 mb-2">
                         <AlertCircle className="w-6 h-6" />
-                        <p className="text-sm opacity-90">Total Pending Amount</p>
+                        <p className="text-sm opacity-90">Total Baqi Amount</p>
                     </div>
                     <p className="text-3xl font-bold">{formatCurrency(totalPending)}</p>
                     <p className="text-sm opacity-75 mt-2">
-                        From {pendingCustomers.length} customer{pendingCustomers.length !== 1 ? "s" : ""}
+                        {pendingCustomers.length} customer{pendingCustomers.length !== 1 ? "s" : ""} se
                     </p>
                 </div>
 
@@ -150,7 +151,7 @@ export default function PendingPage() {
                                 : "bg-white text-gray-700 border border-gray-200"
                         }`}
                     >
-                        All ({pendingCustomers.length})
+                        Sab ({pendingCustomers.length})
                     </button>
                     <button
                         type="button"
@@ -161,7 +162,7 @@ export default function PendingPage() {
                                 : "bg-white text-gray-700 border border-gray-200"
                         }`}
                     >
-                        Overdue ({overdueCount})
+                        Zyada Dair ({overdueCount})
                     </button>
                     <button
                         type="button"
@@ -181,11 +182,11 @@ export default function PendingPage() {
                     {filteredCustomers.length === 0 ? (
                         <div className="bg-white rounded-2xl p-8 text-center">
                             <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                            <p className="text-gray-600 mb-2">No pending payments</p>
+                            <p className="text-gray-600 mb-2">Koi baqi payment nahi</p>
                             <p className="text-sm text-gray-400">
                                 {filter === "all"
-                                    ? "All customers are up to date!"
-                                    : `No ${filter} payments found`}
+                                    ? "Sab customers up to date hain!"
+                                    : `Koi ${filter} payment nahi mili`}
                             </p>
                         </div>
                     ) : (
@@ -206,9 +207,8 @@ export default function PendingPage() {
                 {filteredCustomers.length > 0 && (
                     <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
                         <p className="text-sm text-amber-800">
-                            <strong>💡 Quick Tip:</strong> Send reminders via WhatsApp to
-                            customers who are overdue. Regular communication helps maintain
-                            good payment discipline.
+                            <strong>💡 Madad:</strong> WhatsApp reminders bhejein un customers ko jo late hain.
+                            Regular messages se payment discipline achhi rehti hai.
                         </p>
                     </div>
                 )}

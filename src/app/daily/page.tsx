@@ -1,4 +1,5 @@
-// src/app/daily/page.tsx
+// src/app/daily/page.tsx - FIXED with async Storage
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -20,19 +21,23 @@ export default function DailyPage() {
     const [processing, setProcessing] = useState(false);
 
     useEffect(() => {
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+        loadData();
+    }, [selectedDate]);
+
+    const loadData = async () => {
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
             return;
         }
 
         setCurrentProfile(profile);
-        loadCustomers(profile.id);
-        loadTodayPayments(profile.id);
-    }, [router, selectedDate]);
+        await loadCustomers(profile.id);
+        await loadTodayPayments(profile.id);
+    };
 
-    const loadCustomers = (profileId: number) => {
-        const allCustomers = Storage.get<Customer[]>("customers", []);
+    const loadCustomers = async (profileId: number) => {
+        const allCustomers = await Storage.get<Customer[]>("customers", []);
         const dailyCustomers = allCustomers.filter(
             (c) =>
                 c.profileId === profileId &&
@@ -42,8 +47,8 @@ export default function DailyPage() {
         setCustomers(dailyCustomers);
     };
 
-    const loadTodayPayments = (profileId: number) => {
-        const allPayments = Storage.get<Payment[]>("payments", []);
+    const loadTodayPayments = async (profileId: number) => {
+        const allPayments = await Storage.get<Payment[]>("payments", []);
         const todayPaymentsList = allPayments.filter((p) => p.date === selectedDate);
 
         const paymentMap: Record<number, boolean> = {};
@@ -63,18 +68,18 @@ export default function DailyPage() {
 
             if (isAlreadyPaid) {
                 // Remove payment
-                const allPayments = Storage.get<Payment[]>("payments", []);
+                const allPayments = await Storage.get<Payment[]>("payments", []);
                 const filtered = allPayments.filter(
                     (p) => !(p.customerId === customer.id && p.date === selectedDate)
                 );
-                Storage.save("payments", filtered);
+                await Storage.save("payments", filtered);
 
                 // Update customer
-                const allCustomers = Storage.get<Customer[]>("customers", []);
+                const allCustomers = await Storage.get<Customer[]>("customers", []);
                 const customerIndex = allCustomers.findIndex((c) => c.id === customer.id);
                 if (customerIndex !== -1) {
                     allCustomers[customerIndex].paidAmount -= customer.installmentAmount;
-                    Storage.save("customers", allCustomers);
+                    await Storage.save("customers", allCustomers);
                 }
 
                 setTodayPayments((prev) => {
@@ -92,28 +97,28 @@ export default function DailyPage() {
                     createdAt: new Date().toISOString(),
                 };
 
-                const allPayments = Storage.get<Payment[]>("payments", []);
+                const allPayments = await Storage.get<Payment[]>("payments", []);
                 allPayments.push(payment);
-                Storage.save("payments", allPayments);
+                await Storage.save("payments", allPayments);
 
                 // Update customer
-                const allCustomers = Storage.get<Customer[]>("customers", []);
+                const allCustomers = await Storage.get<Customer[]>("customers", []);
                 const customerIndex = allCustomers.findIndex((c) => c.id === customer.id);
                 if (customerIndex !== -1) {
                     allCustomers[customerIndex].paidAmount += customer.installmentAmount;
                     allCustomers[customerIndex].lastPayment = selectedDate;
-                    Storage.save("customers", allCustomers);
+                    await Storage.save("customers", allCustomers);
 
                     if (currentProfile) {
-                        loadCustomers(currentProfile.id);
+                        await loadCustomers(currentProfile.id);
                     }
                 }
 
                 setTodayPayments((prev) => ({ ...prev, [customer.id]: true }));
             }
         } catch (error) {
-            console.error("Error toggling payment:", error);
-            alert("Failed to update payment. Please try again.");
+            console.error("Payment toggle error:", error);
+            alert("Payment update nahi ho saki. Dobara try karein.");
         } finally {
             setProcessing(false);
         }
@@ -130,7 +135,7 @@ export default function DailyPage() {
         <div className="min-h-screen bg-gray-50 pb-20">
             {/* Header */}
             <div className="bg-white border-b px-4 py-4">
-                <h1 className="text-2xl font-bold mb-3">Daily Collection</h1>
+                <h1 className="text-2xl font-bold mb-3">Rozana Collection</h1>
 
                 {/* Date Selector */}
                 <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-xl">
@@ -150,7 +155,7 @@ export default function DailyPage() {
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 text-white shadow-lg">
                     <div className="flex items-center justify-between mb-4">
                         <div>
-                            <p className="text-sm opacity-90 mb-1">Collected Today</p>
+                            <p className="text-sm opacity-90 mb-1">Aaj Wusool Hua</p>
                             <p className="text-3xl font-bold">{formatCurrency(collectedToday)}</p>
                         </div>
                         <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
@@ -161,7 +166,7 @@ export default function DailyPage() {
                     <div className="flex items-center justify-between pt-4 border-t border-white/20">
                         <div className="flex items-center gap-2">
                             <Users className="w-4 h-4" />
-                            <span className="text-sm">Customers Paid</span>
+                            <span className="text-sm">Customers ne Diya</span>
                         </div>
                         <span className="font-bold">
                             {paidCount} / {totalCount}
@@ -186,9 +191,9 @@ export default function DailyPage() {
                     {customers.length === 0 ? (
                         <div className="bg-white rounded-2xl p-8 text-center">
                             <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                            <p className="text-gray-600 mb-2">No daily customers found</p>
+                            <p className="text-gray-600 mb-2">Koi rozana customer nahi mila</p>
                             <p className="text-sm text-gray-400">
-                                Add customers with daily payment frequency to see them here
+                                Daily payment frequency wale customers yahan dikhenge
                             </p>
                         </div>
                     ) : (
@@ -231,10 +236,10 @@ export default function DailyPage() {
                                                 <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
                                                     <span className="flex items-center gap-1">
                                                         <DollarSign className="w-3 h-3" />
-                                                        Due: {formatCurrency(customer.installmentAmount)}
+                                                        Dena: {formatCurrency(customer.installmentAmount)}
                                                     </span>
                                                     <span>•</span>
-                                                    <span>Left: {formatCurrency(remaining)}</span>
+                                                    <span>Baqi: {formatCurrency(remaining)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -243,7 +248,7 @@ export default function DailyPage() {
                                         {isPaid && (
                                             <div className="flex-shrink-0 ml-2">
                                                 <span className="px-3 py-1 bg-green-500 text-white text-xs font-medium rounded-full">
-                                                    ✓ Paid
+                                                    ✓ Mil Gaya
                                                 </span>
                                             </div>
                                         )}
@@ -258,8 +263,8 @@ export default function DailyPage() {
                 {customers.length > 0 && (
                     <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
                         <p className="text-sm text-blue-800">
-                            💡 <strong>Tip:</strong> Tap on customer cards to mark payments.
-                            You can undo by tapping again.
+                            💡 <strong>Madad:</strong> Customer cards pe tap karke payment mark karein.
+                            Dobara tap karke undo kar sakte hain.
                         </p>
                     </div>
                 )}

@@ -1,4 +1,4 @@
-// src/lib/storage.ts - UPDATED to use IndexedDB + localStorage fallback
+// src/lib/storage.ts - FIXED with sync wrapper for client components
 
 import { db } from './db';
 import type { Profile } from '@/types';
@@ -8,7 +8,10 @@ type StorageKey =
     | 'app_settings'
     | 'notifications'
     | 'language'
-    | 'theme';
+    | 'theme'
+    | 'customers'
+    | 'payments'
+    | 'profiles';
 
 // ============================================
 // STORAGE SERVICE (IndexedDB + localStorage)
@@ -47,7 +50,7 @@ export const Storage = {
     },
 
     /**
-     * Get data - Try IndexedDB first, fallback to localStorage
+     * ✅ ASYNC Get data - For Server Components & async contexts
      */
     get: async <T>(key: StorageKey, defaultValue?: T): Promise<T> => {
         try {
@@ -71,16 +74,17 @@ export const Storage = {
     },
 
     /**
-     * Get data synchronously from localStorage (for backwards compatibility)
+     * ✅ SYNC Get data - For Client Components (immediate access)
+     * Uses localStorage directly - no await needed
      */
-    getSync: <T>(key: StorageKey, defaultValue?: T): T => {
-        if (typeof window === 'undefined') return defaultValue as T;
+    getSync: <T>(key: StorageKey, defaultValue: T): T => {
+        if (typeof window === 'undefined') return defaultValue;
 
         try {
             const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : (defaultValue as T);
+            return item ? JSON.parse(item) : defaultValue;
         } catch {
-            return defaultValue as T;
+            return defaultValue;
         }
     },
 
@@ -194,7 +198,7 @@ export const Storage = {
         if (profileCount === 0) {
             const defaultProfile: Profile = {
                 id: Date.now(),
-                name: 'My Business',
+                name: 'Mera Business',
                 description: 'Default business account',
                 gradient: 'from-blue-500 to-purple-500',
                 createdAt: new Date().toISOString(),
@@ -219,36 +223,3 @@ function formatBytes(bytes: number): string {
 
     return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
 }
-
-// ============================================
-// BACKWARDS COMPATIBILITY
-// ============================================
-
-// For components that still use Storage.get('customers', [])
-// We'll keep these as wrappers to database queries
-
-export const LegacyStorage = {
-    get: <T>(key: string, defaultValue: T): T => {
-        // This is for OLD code that uses sync storage
-        // New code should use db directly
-        if (typeof window === 'undefined') return defaultValue;
-
-        try {
-            const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : defaultValue;
-        } catch {
-            return defaultValue;
-        }
-    },
-
-    save: <T>(key: string, data: T): boolean => {
-        if (typeof window === 'undefined') return false;
-
-        try {
-            localStorage.setItem(key, JSON.stringify(data));
-            return true;
-        } catch {
-            return false;
-        }
-    },
-};
