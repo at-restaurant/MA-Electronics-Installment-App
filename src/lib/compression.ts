@@ -1,4 +1,4 @@
-// src/lib/imageCompressor.ts - Advanced WebP Image Compression
+// src/lib/compression.ts - UNIFIED IMAGE COMPRESSION
 
 interface CompressionOptions {
     maxWidth?: number;
@@ -8,12 +8,12 @@ interface CompressionOptions {
     format?: 'webp' | 'jpeg';
 }
 
-export class ImageCompressor {
+export class ImageCompression {
     /**
-     * Compress single image to WebP format
+     * Compress image to specified constraints
      */
     static async compress(
-        file: File | string,
+        input: File | string,
         options: CompressionOptions = {}
     ): Promise<string> {
         const {
@@ -21,7 +21,7 @@ export class ImageCompressor {
             maxHeight = 800,
             maxSizeKB = 100,
             quality = 0.8,
-            format = 'webp'
+            format = 'jpeg'
         } = options;
 
         return new Promise((resolve, reject) => {
@@ -30,7 +30,11 @@ export class ImageCompressor {
             img.onload = () => {
                 try {
                     const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d')!;
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        reject(new Error('Failed to get canvas context'));
+                        return;
+                    }
 
                     // Calculate dimensions
                     let { width, height } = img;
@@ -53,7 +57,7 @@ export class ImageCompressor {
                     let currentQuality = quality;
                     let result = canvas.toDataURL(`image/${format}`, currentQuality);
 
-                    while (this.getBase64Size(result) > maxSizeKB && currentQuality > 0.1) {
+                    while (this.getBase64SizeKB(result) > maxSizeKB && currentQuality > 0.1) {
                         currentQuality -= 0.05;
                         result = canvas.toDataURL(`image/${format}`, currentQuality);
                     }
@@ -66,44 +70,22 @@ export class ImageCompressor {
 
             img.onerror = () => reject(new Error('Image load failed'));
 
-            if (typeof file === 'string') {
-                img.src = file;
+            if (typeof input === 'string') {
+                img.src = input;
             } else {
                 const reader = new FileReader();
                 reader.onload = (e) => { img.src = e.target?.result as string; };
                 reader.onerror = () => reject(new Error('File read failed'));
-                reader.readAsDataURL(file);
+                reader.readAsDataURL(input);
             }
         });
     }
 
     /**
-     * Compress multiple images
+     * Compress profile photo (400x400, max 60KB)
      */
-    static async compressMultiple(
-        files: (File | string)[],
-        options: CompressionOptions = {}
-    ): Promise<string[]> {
-        return Promise.all(files.map(file => this.compress(file, options)));
-    }
-
-    /**
-     * Compress for CNIC (smaller size)
-     */
-    static async compressCNIC(file: File | string): Promise<string> {
-        return this.compress(file, {
-            maxWidth: 600,
-            maxHeight: 400,
-            maxSizeKB: 50,
-            quality: 0.75,
-        });
-    }
-
-    /**
-     * Compress for profile photo
-     */
-    static async compressProfile(file: File | string): Promise<string> {
-        return this.compress(file, {
+    static async compressProfile(input: File | string): Promise<string> {
+        return this.compress(input, {
             maxWidth: 400,
             maxHeight: 400,
             maxSizeKB: 60,
@@ -112,10 +94,22 @@ export class ImageCompressor {
     }
 
     /**
-     * Compress for guarantor photo
+     * Compress CNIC photo (600x400, max 50KB)
      */
-    static async compressGuarantor(file: File | string): Promise<string> {
-        return this.compress(file, {
+    static async compressCNIC(input: File | string): Promise<string> {
+        return this.compress(input, {
+            maxWidth: 600,
+            maxHeight: 400,
+            maxSizeKB: 50,
+            quality: 0.75,
+        });
+    }
+
+    /**
+     * Compress guarantor photo (300x300, max 40KB)
+     */
+    static async compressGuarantor(input: File | string): Promise<string> {
+        return this.compress(input, {
             maxWidth: 300,
             maxHeight: 300,
             maxSizeKB: 40,
@@ -124,23 +118,25 @@ export class ImageCompressor {
     }
 
     /**
-     * Get base64 size in KB
+     * Create thumbnail (100x100, max 10KB)
      */
-    private static getBase64Size(base64: string): number {
-        const base64Data = base64.split(',')[1] || base64;
-        return (base64Data.length * 3) / 4 / 1024;
-    }
-
-    /**
-     * Create thumbnail
-     */
-    static async createThumbnail(file: File | string, size: number = 100): Promise<string> {
-        return this.compress(file, {
-            maxWidth: size,
-            maxHeight: size,
+    static async createThumbnail(input: File | string): Promise<string> {
+        return this.compress(input, {
+            maxWidth: 100,
+            maxHeight: 100,
             maxSizeKB: 10,
             quality: 0.7,
         });
+    }
+
+    /**
+     * Compress multiple images
+     */
+    static async compressMultiple(
+        inputs: (File | string)[],
+        options: CompressionOptions = {}
+    ): Promise<string[]> {
+        return Promise.all(inputs.map(input => this.compress(input, options)));
     }
 
     /**
@@ -162,10 +158,42 @@ export class ImageCompressor {
     }
 
     /**
-     * Get estimated compressed size
+     * Get base64 size in KB
+     */
+    private static getBase64SizeKB(base64: string): number {
+        const base64Data = base64.split(',')[1] || base64;
+        return (base64Data.length * 3) / 4 / 1024;
+    }
+
+    /**
+     * Estimate compressed size
      */
     static estimateCompressedSize(originalSizeKB: number): number {
-        // WebP compression typically achieves 70-80% reduction
+        // JPEG/WebP typically achieves 70-80% reduction
         return Math.round(originalSizeKB * 0.25);
+    }
+
+    /**
+     * Get image dimensions
+     */
+    static async getDimensions(input: File | string): Promise<{ width: number; height: number }> {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+
+            img.onload = () => {
+                resolve({ width: img.width, height: img.height });
+            };
+
+            img.onerror = () => reject(new Error('Failed to load image'));
+
+            if (typeof input === 'string') {
+                img.src = input;
+            } else {
+                const reader = new FileReader();
+                reader.onload = (e) => { img.src = e.target?.result as string; };
+                reader.onerror = () => reject(new Error('File read failed'));
+                reader.readAsDataURL(input);
+            }
+        });
     }
 }

@@ -1,12 +1,14 @@
+// src/app/customers/add/page.tsx - UPDATED TO USE NEW SERVICES
+
 'use client';
 
 import { Camera, Save, UserPlus, Trash2, Zap, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import GlobalHeader from '@/components/GlobalHeader';
-import { UltraStorage } from '@/lib/storage-ultra-compressed';
 import { db } from '@/lib/db';
-import { WhatsAppQueueService } from '@/lib/whatsappQueue';
+import { ImageCompression } from '@/lib/compression';
+import { WhatsAppService } from '@/lib/whatsapp-unified';
 import { useProfile } from '@/hooks/useCompact';
 import type { Customer, Guarantor } from '@/types';
 
@@ -26,11 +28,9 @@ export default function AddCustomerPage() {
         startDate: new Date().toISOString().split('T')[0],
         photo: null as string | null,
         cnicPhoto: null as string | null,
-        cnicPhotos: [] as string[],
         category: 'Electronics',
         notes: '',
-        autoMessaging:  true,
-        // REMOVED: investmentAmount and paymentSource
+        autoMessaging: true,
     });
 
     const [guarantors, setGuarantors] = useState<(Guarantor & { id: number })[]>([]);
@@ -45,6 +45,7 @@ export default function AddCustomerPage() {
 
     const [plans, setPlans] = useState<any[]>([]);
     const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
+    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
         loadCategories();
@@ -63,12 +64,12 @@ export default function AddCustomerPage() {
 
     const generatePlans = () => {
         const total = parseFloat(form.totalAmount);
-        if (! total || total <= 0) {
+        if (!total || total <= 0) {
             setPlans([]);
             return;
         }
 
-        const freq = form.frequency as 'daily' | 'weekly' | 'monthly';
+        const freq = form.frequency;
         const suggestions = [];
 
         if (freq === 'daily') {
@@ -87,7 +88,7 @@ export default function AddCustomerPage() {
             suggestions.push(
                 { label: '6 Months', months: 6, installment: Math.ceil(total / 6) },
                 { label: '12 Months', months: 12, installment: Math.ceil(total / 12) },
-                { label:  '18 Months', months: 18, installment: Math.ceil(total / 18) }
+                { label: '18 Months', months: 18, installment: Math.ceil(total / 18) }
             );
         }
 
@@ -97,7 +98,7 @@ export default function AddCustomerPage() {
     const selectPlan = (index: number) => {
         const plan = plans[index];
         setSelectedPlan(index);
-        setForm({ ...form, installmentAmount: plan.installment. toString() });
+        setForm({ ...form, installmentAmount: plan.installment.toString() });
     };
 
     const calculateEndDate = () => {
@@ -105,7 +106,7 @@ export default function AddCustomerPage() {
         const inst = parseFloat(form.installmentAmount);
         const total = parseFloat(form.totalAmount);
 
-        if (! inst || !total) return '';
+        if (!inst || !total) return '';
 
         const count = Math.ceil(total / inst);
         const end = new Date(start);
@@ -115,32 +116,54 @@ export default function AddCustomerPage() {
                 end.setDate(end.getDate() + count);
                 break;
             case 'weekly':
-                end.setDate(end. getDate() + count * 7);
+                end.setDate(end.getDate() + count * 7);
                 break;
             case 'monthly':
-                end. setMonth(end.getMonth() + count);
+                end.setMonth(end.getMonth() + count);
                 break;
         }
 
         return end.toISOString().split('T')[0];
     };
 
+    // ✅ NEW: Using ImageCompression service
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
         const file = e.target.files?.[0];
-        if (! file || file.size > 5 * 1024 * 1024) {
-            alert('File too large (max 5MB)');
+        if (!file) return;
+
+        // Validate
+        const validation = ImageCompression.validateFile(file);
+        if (!validation.valid) {
+            alert(validation.error);
             return;
         }
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            if (field === 'guarantorPhoto') {
-                setGuarantorForm((prev) => ({ ...prev, photo: reader.result as string }));
+        setUploading(true);
+
+        try {
+            let compressed: string;
+
+            if (field === 'photo') {
+                compressed = await ImageCompression.compressProfile(file);
+            } else if (field === 'cnicPhoto') {
+                compressed = await ImageCompression.compressCNIC(file);
+            } else if (field === 'guarantorPhoto') {
+                compressed = await ImageCompression.compressGuarantor(file);
             } else {
-                setForm((prev) => ({ ...prev, [field]: reader.result }));
+                compressed = await ImageCompression.compress(file);
             }
-        };
-        reader.readAsDataURL(file);
+
+            if (field === 'guarantorPhoto') {
+                setGuarantorForm((prev) => ({ ...prev, photo: compressed }));
+            } else {
+                setForm((prev) => ({ ...prev, [field]: compressed }));
+            }
+        } catch (error) {
+            console.error('Image compression failed:', error);
+            alert('Failed to compress image');
+        } finally {
+            setUploading(false);
+        }
     };
 
     const addGuarantor = () => {
@@ -164,50 +187,58 @@ export default function AddCustomerPage() {
         setGuarantors(guarantors.filter((g) => g.id !== id));
     };
 
+    // ✅ NEW: Using db directly + WhatsAppService
     const handleSubmit = async () => {
         if (!form.name || !form.phone || !form.totalAmount || !form.installmentAmount || !profile) {
             alert('Please fill all required fields');
             return;
         }
 
-        const customer: Customer = {
-            id:  Date.now(),
-            profileId: profile.id,
-            name: form.name,
-            phone: form.phone,
-            address: form.address,
-            cnic: form.cnic,
-            photo: form.photo,
-            cnicPhoto: form.cnicPhoto,
-            cnicPhotos:  form.cnicPhoto ? [form.cnicPhoto] : [],
-            document: null,
-            totalAmount: parseFloat(form.totalAmount),
-            installmentAmount:  parseFloat(form.installmentAmount),
-            frequency: form.frequency,
-            startDate: form. startDate,
-            endDate: calculateEndDate(),
-            notes: form.notes,
-            paidAmount: 0,
-            lastPayment: form.startDate,
-            status: 'active',
-            createdAt: new Date().toISOString(),
-            category: form.category,
-            autoMessaging: form.autoMessaging,
-            guarantors,
-            autoSchedule: true,
-            // REMOVED: investmentAmount and paymentSource
-        };
+        try {
+            const customer: Customer = {
+                id: Date.now(),
+                profileId: profile.id,
+                name: form.name,
+                phone: form.phone,
+                address: form.address,
+                cnic: form.cnic,
+                photo: form.photo,
+                cnicPhoto: form.cnicPhoto,
+                cnicPhotos: form.cnicPhoto ? [form.cnicPhoto] : [],
+                document: null,
+                totalAmount: parseFloat(form.totalAmount),
+                installmentAmount: parseFloat(form.installmentAmount),
+                frequency: form.frequency,
+                startDate: form.startDate,
+                endDate: calculateEndDate(),
+                notes: form.notes,
+                paidAmount: 0,
+                lastPayment: form.startDate,
+                status: 'active',
+                createdAt: new Date().toISOString(),
+                category: form.category,
+                autoMessaging: form.autoMessaging,
+                guarantors,
+                autoSchedule: true,
+                tags: [],
+            };
 
-        await UltraStorage.save(customer);
+            // Save to database
+            await db.customers.add(customer);
 
-        if (form.autoMessaging) {
-            await WhatsAppQueueService. queueMessage(customer, 'welcome');
+            // ✅ Queue welcome message (works offline!)
+            if (form.autoMessaging) {
+                await WhatsAppService.queueMessage(customer, 'welcome');
+            }
+
+            router.push('/customers');
+        } catch (error) {
+            console.error('Failed to save customer:', error);
+            alert('Failed to save customer');
         }
-
-        router.push('/customers');
     };
 
-    if (! profile) {
+    if (!profile) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
@@ -226,18 +257,25 @@ export default function AddCustomerPage() {
                         <div className="flex flex-col items-center">
                             <div className="relative">
                                 <div className="w-32 h-32 rounded-full bg-white/20 backdrop-blur-sm border-4 border-white shadow-xl flex items-center justify-center overflow-hidden">
-                                    {form.photo ?  (
+                                    {form.photo ? (
                                         <img src={form.photo} alt="Customer" className="w-full h-full object-cover" />
                                     ) : (
                                         <Camera className="w-12 h-12 text-white" />
                                     )}
                                 </div>
-                                <label className="absolute bottom-0 right-0 bg-white text-blue-600 p-3 rounded-full cursor-pointer hover:bg-blue-50 shadow-lg">
+                                <label className={`absolute bottom-0 right-0 bg-white text-blue-600 p-3 rounded-full cursor-pointer hover:bg-blue-50 shadow-lg ${uploading ? 'opacity-50' : ''}`}>
                                     <Camera className="w-5 h-5" />
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'photo')} />
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => handleImageUpload(e, 'photo')}
+                                        disabled={uploading}
+                                    />
                                 </label>
                             </div>
                             <p className="text-white mt-3 text-sm font-medium">Customer Photo (Optional)</p>
+                            {uploading && <p className="text-white text-xs mt-1">Compressing...</p>}
                         </div>
                     </div>
 
@@ -257,7 +295,7 @@ export default function AddCustomerPage() {
                             <div>
                                 <label className="block text-sm font-medium mb-1.5">Phone *</label>
                                 <input
-                                    value={form. phone}
+                                    value={form.phone}
                                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
                                     placeholder="+92 300 1234567"
                                     className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -285,23 +323,8 @@ export default function AddCustomerPage() {
                                     value={form.cnic}
                                     onChange={(e) => setForm({ ...form, cnic: e.target.value })}
                                     placeholder="12345-1234567-1"
-                                    className="w-full px-3 py-2.5 border rounded-lg focus: ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                 />
-                            </div>
-                        </div>
-
-                        {/* CNIC Photo */}
-                        <div>
-                            <label className="block text-sm font-medium mb-2">CNIC Photo</label>
-                            <div className="flex gap-3">
-                                {form.cnicPhoto && (
-                                    <img src={form.cnicPhoto} alt="CNIC" className="w-32 h-20 object-cover rounded-lg border" />
-                                )}
-                                <label className="flex-1 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 cursor-pointer transition-colors flex items-center justify-center gap-2">
-                                    <Camera className="w-5 h-5 text-gray-400" />
-                                    <span className="text-sm text-gray-600">Upload CNIC</span>
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'cnicPhoto')} />
-                                </label>
                             </div>
                         </div>
 
@@ -314,6 +337,29 @@ export default function AddCustomerPage() {
                                 placeholder="House #, Street, Area"
                                 className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                             />
+                        </div>
+
+                        {/* CNIC Photo */}
+                        <div>
+                            <label className="block text-sm font-medium mb-2">CNIC Photo</label>
+                            <div className="flex gap-3">
+                                {form.cnicPhoto && (
+                                    <img src={form.cnicPhoto} alt="CNIC" className="w-32 h-20 object-cover rounded-lg border" />
+                                )}
+                                <label className={`flex-1 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 cursor-pointer transition-colors flex items-center justify-center gap-2 ${uploading ? 'opacity-50' : ''}`}>
+                                    <Camera className="w-5 h-5 text-gray-400" />
+                                    <span className="text-sm text-gray-600">
+                                        {uploading ? 'Compressing...' : 'Upload CNIC'}
+                                    </span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => handleImageUpload(e, 'cnicPhoto')}
+                                        disabled={uploading}
+                                    />
+                                </label>
+                            </div>
                         </div>
 
                         {/* Payment Details */}
@@ -331,7 +377,7 @@ export default function AddCustomerPage() {
                                         value={form.totalAmount}
                                         onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
                                         placeholder="50000"
-                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div>
@@ -339,7 +385,7 @@ export default function AddCustomerPage() {
                                     <select
                                         value={form.frequency}
                                         onChange={(e) => setForm({ ...form, frequency: e.target.value as any })}
-                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="daily">Daily</option>
                                         <option value="weekly">Weekly</option>
@@ -348,7 +394,7 @@ export default function AddCustomerPage() {
                                 </div>
                             </div>
 
-                            {/* Auto-generated plans */}
+                            {/* Quick Plans */}
                             {plans.length > 0 && (
                                 <div className="mb-3">
                                     <label className="block text-sm font-medium mb-2 flex items-center gap-2">
@@ -362,16 +408,11 @@ export default function AddCustomerPage() {
                                                 type="button"
                                                 onClick={() => selectPlan(i)}
                                                 className={`p-3 rounded-lg border-2 transition-all ${
-                                                    selectedPlan === i ?  'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
+                                                    selectedPlan === i ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
                                                 }`}
                                             >
                                                 <p className="text-xs font-semibold text-gray-700">{plan.label}</p>
-                                                <p className="text-sm font-bold text-blue-600 mt-1">₨{plan.installment. toLocaleString()}</p>
-                                                <p className="text-xs text-gray-500">
-                                                    {form.frequency === 'daily' && `${plan.days} days`}
-                                                    {form.frequency === 'weekly' && `${plan.weeks} weeks`}
-                                                    {form.frequency === 'monthly' && `${plan.months} months`}
-                                                </p>
+                                                <p className="text-sm font-bold text-blue-600 mt-1">₨{plan.installment.toLocaleString()}</p>
                                             </button>
                                         ))}
                                     </div>
@@ -384,9 +425,9 @@ export default function AddCustomerPage() {
                                     <input
                                         type="number"
                                         value={form.installmentAmount}
-                                        onChange={(e) => setForm({ ...form, installmentAmount: e.target. value })}
+                                        onChange={(e) => setForm({ ...form, installmentAmount: e.target.value })}
                                         placeholder="2000"
-                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div>
@@ -395,44 +436,10 @@ export default function AddCustomerPage() {
                                         type="date"
                                         value={form.startDate}
                                         onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                             </div>
-
-                            {/* Plan Preview */}
-                            {form.totalAmount && form.installmentAmount && (
-                                <div className="mt-4 p-4 bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-blue-200">
-                                    <p className="text-sm font-semibold text-blue-900 mb-2">📊 Plan Summary</p>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div className="text-center p-2 bg-white rounded-lg">
-                                            <p className="text-xs text-blue-700 mb-1">Installments</p>
-                                            <p className="font-bold text-blue-900">
-                                                {Math.ceil(parseFloat(form.totalAmount) / parseFloat(form.installmentAmount))}
-                                            </p>
-                                        </div>
-                                        <div className="text-center p-2 bg-white rounded-lg">
-                                            <p className="text-xs text-blue-700 mb-1">Duration</p>
-                                            <p className="font-bold text-blue-900 text-xs">
-                                                {form.frequency === 'daily' &&
-                                                    `${Math.ceil(parseFloat(form.totalAmount) / parseFloat(form.installmentAmount))} days`}
-                                                {form.frequency === 'weekly' &&
-                                                    `${Math.ceil(
-                                                        Math.ceil(parseFloat(form. totalAmount) / parseFloat(form.installmentAmount)) / 4
-                                                    )} months`}
-                                                {form.frequency === 'monthly' &&
-                                                    `${Math.ceil(parseFloat(form.totalAmount) / parseFloat(form.installmentAmount))} months`}
-                                            </p>
-                                        </div>
-                                        <div className="text-center p-2 bg-white rounded-lg">
-                                            <p className="text-xs text-blue-700 mb-1">End Date</p>
-                                            <p className="font-bold text-blue-900 text-xs">
-                                                {new Date(calculateEndDate()).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
 
                         {/* Auto-Message Toggle */}
@@ -442,7 +449,7 @@ export default function AddCustomerPage() {
                                     <MessageSquare className="w-5 h-5 text-green-600" />
                                     <div>
                                         <p className="font-medium">Auto WhatsApp Messages</p>
-                                        <p className="text-xs text-gray-600">Automatic reminders</p>
+                                        <p className="text-xs text-gray-600">Automatic reminders (works offline)</p>
                                     </div>
                                 </div>
                                 <input
@@ -454,7 +461,7 @@ export default function AddCustomerPage() {
                             </label>
                         </div>
 
-                        {/* Guarantor Section */}
+                        {/* Guarantors */}
                         <div className="border-t pt-4">
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="font-semibold flex items-center gap-2">
@@ -470,9 +477,9 @@ export default function AddCustomerPage() {
                                 </button>
                             </div>
 
-                            {guarantors. length > 0 && (
+                            {guarantors.length > 0 && (
                                 <div className="space-y-2 mb-3">
-                                    {guarantors. map((g) => (
+                                    {guarantors.map((g) => (
                                         <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                                             {g.photo && <img src={g.photo} alt={g.name} className="w-10 h-10 rounded-full object-cover" />}
                                             <div className="flex-1 min-w-0">
@@ -517,14 +524,24 @@ export default function AddCustomerPage() {
                                             className="px-3 py-2 border rounded-lg"
                                         />
                                     </div>
-                                    <label className="flex items-center gap-2 p-3 border-2 border-dashed rounded-lg hover:border-purple-500 cursor-pointer">
+                                    <label className={`flex items-center gap-2 p-3 border-2 border-dashed rounded-lg hover:border-purple-500 cursor-pointer ${uploading ? 'opacity-50' : ''}`}>
                                         <Camera className="w-5 h-5 text-gray-400" />
                                         <span className="text-sm text-gray-600">
-                      {guarantorForm.photo ? 'Photo added ✓' : 'Add Photo'}
-                    </span>
-                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'guarantorPhoto')} />
+                                            {uploading ? 'Compressing...' : guarantorForm.photo ? 'Photo added ✓' : 'Add Photo'}
+                                        </span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleImageUpload(e, 'guarantorPhoto')}
+                                            disabled={uploading}
+                                        />
                                     </label>
-                                    <button type="button" onClick={addGuarantor} className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700">
+                                    <button
+                                        type="button"
+                                        onClick={addGuarantor}
+                                        className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700"
+                                    >
                                         Add Guarantor
                                     </button>
                                 </div>
@@ -533,7 +550,7 @@ export default function AddCustomerPage() {
 
                         {/* Notes */}
                         <div>
-                            <label className="block text-sm font-medium mb-1. 5">Notes</label>
+                            <label className="block text-sm font-medium mb-1.5">Notes</label>
                             <textarea
                                 value={form.notes}
                                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -555,7 +572,8 @@ export default function AddCustomerPage() {
                             <button
                                 type="button"
                                 onClick={handleSubmit}
-                                className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                                disabled={uploading}
+                                className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:opacity-50"
                             >
                                 <Save className="w-5 h-5" />
                                 Save Customer

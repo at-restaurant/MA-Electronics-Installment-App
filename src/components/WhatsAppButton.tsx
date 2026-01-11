@@ -1,7 +1,9 @@
+// src/components/WhatsAppButton.tsx - UPDATED TO USE UNIFIED SERVICE
+
 "use client";
 
 import { MessageSquare } from "lucide-react";
-import { WhatsAppService } from "@/lib/whatsapp";
+import { WhatsAppService } from "@/lib/whatsapp-unified";
 
 interface Customer {
     name: string;
@@ -28,16 +30,16 @@ export default function WhatsAppButton({
     const handleClick = () => {
         switch (type) {
             case "reminder":
-                WhatsAppService.sendPaymentReminder(customer);
+                WhatsAppService.sendReminder(customer);
                 break;
             case "overdue":
-                WhatsAppService.sendOverdueAlert(customer, daysOverdue || 0);
+                WhatsAppService.sendOverdue(customer, daysOverdue || 0);
                 break;
             case "welcome":
-                WhatsAppService.sendWelcomeMessage(customer);
+                WhatsAppService.sendWelcome(customer);
                 break;
             case "completion":
-                WhatsAppService.sendCompletionMessage(customer);
+                WhatsAppService.sendCompletion(customer);
                 break;
         }
     };
