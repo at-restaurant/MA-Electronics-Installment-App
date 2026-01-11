@@ -1,32 +1,43 @@
+// src/app/page.tsx - FIXED with IndexedDB
 "use client";
 
 import { useState, useEffect } from "react";
 import {
-    LayoutDashboard,
+    DollarSign,
     Users,
     TrendingUp,
-    DollarSign,
     Clock,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import ProfileSelector from "@/components/ProfileSelector";
 import { Storage } from "@/lib/storage";
+import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
 import type { Profile, Customer } from "@/types";
 import { useRouter } from "next/navigation";
+import { useLiveQuery } from "dexie-react-hooks";
 
 export default function DashboardPage() {
     const router = useRouter();
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [showProfileSelector, setShowProfileSelector] = useState(false);
-    const [customers, setCustomers] = useState<Customer[]>([]);
+
+    // Use live query for auto-updating data
+    const customers = useLiveQuery(
+        async () => {
+            if (!currentProfile) return [];
+            return db.getCustomersByProfile(currentProfile.id);
+        },
+        [currentProfile],
+        []
+    );
 
     useEffect(() => {
         loadData();
     }, []);
 
-    const loadData = () => {
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+    const loadData = async () => {
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
 
         if (!profile) {
             setShowProfileSelector(true);
@@ -34,17 +45,13 @@ export default function DashboardPage() {
         }
 
         setCurrentProfile(profile);
-
-        const allCustomers = Storage.get<Customer[]>("customers", []);
-        setCustomers(allCustomers.filter((c) => c.profileId === profile.id));
     };
 
     const stats = {
-        totalReceived: customers.reduce((sum, c) => sum + c.paidAmount, 0),
-        totalExpected: customers.reduce((sum, c) => sum + c.totalAmount, 0),
-        totalCustomers: customers.length,
-        activeCustomers: customers.filter((c) => c.paidAmount < c.totalAmount)
-            .length,
+        totalReceived: customers?.reduce((sum, c) => sum + c.paidAmount, 0) || 0,
+        totalExpected: customers?.reduce((sum, c) => sum + c.totalAmount, 0) || 0,
+        totalCustomers: customers?.length || 0,
+        activeCustomers: customers?.filter((c) => c.paidAmount < c.totalAmount).length || 0,
     };
 
     const pending = stats.totalExpected - stats.totalReceived;
@@ -56,11 +63,10 @@ export default function DashboardPage() {
     if (showProfileSelector) {
         return (
             <ProfileSelector
-                onSelect={(profile: Profile) => {
+                onSelect={async (profile: Profile) => {
                     setCurrentProfile(profile);
-                    Storage.save("currentProfile", profile);
+                    await Storage.save("currentProfile", profile);
                     setShowProfileSelector(false);
-                    loadData();
                 }}
             />
         );
@@ -125,7 +131,7 @@ export default function DashboardPage() {
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-4">Recent Customers</h3>
                     <div className="space-y-3">
-                        {customers.slice(0, 5).map((customer) => (
+                        {customers?.slice(0, 5).map((customer) => (
                             <div
                                 key={customer.id}
                                 onClick={() => router.push(`/customers/${customer.id}`)}
@@ -141,13 +147,13 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
                                 <span className="text-green-600 font-semibold">
-                  {formatCurrency(customer.installmentAmount)}
-                </span>
+                                    {formatCurrency(customer.installmentAmount)}
+                                </span>
                             </div>
                         ))}
-                        {customers.length === 0 && (
+                        {!customers || customers.length === 0 ? (
                             <p className="text-center text-gray-500 py-4">No customers yet</p>
-                        )}
+                        ) : null}
                     </div>
                 </div>
             </div>

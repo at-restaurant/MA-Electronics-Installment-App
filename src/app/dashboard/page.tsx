@@ -1,35 +1,29 @@
-// src/app/dashboard/page.tsx - Separate Dashboard Folder
+// src/app/dashboard/page.tsx - FIXED
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-    LayoutDashboard,
-    Users,
-    TrendingUp,
-    DollarSign,
-    Clock,
-} from "lucide-react";
+import { DollarSign, Users, TrendingUp, Clock } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import ProfileSelector from "@/components/ProfileSelector";
 import { Storage } from "@/lib/storage";
 import { formatCurrency } from "@/lib/utils";
-import type { Profile, Customer } from "@/types";
+import type { Profile } from "@/types";
 import { useRouter } from "next/navigation";
+import { useCustomers } from "@/hooks/useCustomers";
 
 export default function DashboardPage() {
     const router = useRouter();
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [showProfileSelector, setShowProfileSelector] = useState(false);
-    const [customers, setCustomers] = useState<Customer[]>([]);
+
+    const { customers } = useCustomers(currentProfile?.id);
 
     useEffect(() => {
-        // Initialize default profile if none exists
-        Storage.initializeDefaultProfile();
         loadData();
     }, []);
 
-    const loadData = () => {
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+    const loadData = async () => {
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
 
         if (!profile) {
             setShowProfileSelector(true);
@@ -37,11 +31,6 @@ export default function DashboardPage() {
         }
 
         setCurrentProfile(profile);
-
-        // ✅ ONLY load customers for THIS profile
-        const allCustomers = Storage.get<Customer[]>("customers", []);
-        const profileCustomers = allCustomers.filter((c) => c.profileId === profile.id);
-        setCustomers(profileCustomers);
     };
 
     const stats = {
@@ -60,11 +49,10 @@ export default function DashboardPage() {
     if (showProfileSelector) {
         return (
             <ProfileSelector
-                onSelect={(profile: Profile) => {
+                onSelect={async (profile: Profile) => {
                     setCurrentProfile(profile);
-                    Storage.save("currentProfile", profile);
+                    await Storage.save("currentProfile", profile);
                     setShowProfileSelector(false);
-                    loadData();
                 }}
             />
         );
@@ -72,7 +60,6 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
-            {/* Header */}
             <div className="bg-white border-b px-4 py-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -93,7 +80,6 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* Stats Grid */}
             <div className="p-4 space-y-4">
                 <h1 className="text-2xl font-bold">Dashboard</h1>
 
@@ -101,9 +87,7 @@ export default function DashboardPage() {
                     <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white">
                         <DollarSign className="w-8 h-8 mb-2" />
                         <p className="text-sm opacity-90">Total Received</p>
-                        <p className="text-2xl font-bold">
-                            {formatCurrency(stats.totalReceived)}
-                        </p>
+                        <p className="text-2xl font-bold">{formatCurrency(stats.totalReceived)}</p>
                     </div>
 
                     <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white">
@@ -125,7 +109,6 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Recent Activity */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-4">Recent Customers</h3>
                     <div className="space-y-3">
@@ -145,8 +128,8 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
                                 <span className="text-green-600 font-semibold">
-                  {formatCurrency(customer.installmentAmount)}
-                </span>
+                                    {formatCurrency(customer.installmentAmount)}
+                                </span>
                             </div>
                         ))}
                         {customers.length === 0 && (

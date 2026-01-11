@@ -1,4 +1,4 @@
-// src/app/customers/[id]/page.tsx
+// src/app/customers/[id]/page.tsx - FIXED
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -10,6 +10,7 @@ import {
 import WhatsAppButton from '@/components/WhatsAppButton';
 import ProfileSwitcher from '@/components/ProfileSwitcher';
 import { Storage } from '@/lib/storage';
+import { db } from '@/lib/db';
 import { WhatsAppService } from '@/lib/whatsapp';
 import {
     formatCurrency,
@@ -20,6 +21,7 @@ import {
     getStatusLabel
 } from '@/lib/utils';
 import type { Customer, Payment, Profile } from '@/types';
+import { usePayments } from '@/hooks/useCustomers';
 
 export default function CustomerDetailPage() {
     const router = useRouter();
@@ -28,27 +30,27 @@ export default function CustomerDetailPage() {
 
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
     const [customer, setCustomer] = useState<Customer | null>(null);
-    const [payments, setPayments] = useState<Payment[]>([]);
     const [showAddPayment, setShowAddPayment] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [loading, setLoading] = useState(true);
+
+    const { payments, addPayment, deletePayment } = usePayments(customerId);
 
     useEffect(() => {
         loadData();
     }, [customerId]);
 
-    const loadData = () => {
+    const loadData = async () => {
         setLoading(true);
 
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
             return;
         }
         setCurrentProfile(profile);
 
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const found = allCustomers.find(c => c.id === customerId);
+        const found = await db.customers.get(customerId);
 
         if (!found) {
             router.push('/customers');
@@ -56,16 +58,10 @@ export default function CustomerDetailPage() {
         }
 
         setCustomer(found);
-
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const customerPayments = allPayments.filter(p => p.customerId === customerId);
-        customerPayments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setPayments(customerPayments);
-
         setLoading(false);
     };
 
-    const handleAddPayment = () => {
+    const handleAddPayment = async () => {
         if (!customer) return;
 
         const amount = parseFloat(paymentAmount);
@@ -82,41 +78,23 @@ export default function CustomerDetailPage() {
         }
 
         try {
-            const newPayment: Payment = {
-                id: Date.now(),
+            await addPayment({
                 customerId: customer.id,
                 amount,
                 date: new Date().toISOString().split('T')[0],
-                createdAt: new Date().toISOString(),
-            };
+            });
 
-            const allPayments = Storage.get<Payment[]>('payments', []);
-            allPayments.push(newPayment);
-            Storage.save('payments', allPayments);
+            // Reload customer data
+            await loadData();
 
-            const allCustomers = Storage.get<Customer[]>('customers', []);
-            const customerIndex = allCustomers.findIndex(c => c.id === customer.id);
+            setPaymentAmount('');
+            setShowAddPayment(false);
 
-            if (customerIndex !== -1) {
-                allCustomers[customerIndex].paidAmount += amount;
-                allCustomers[customerIndex].lastPayment = newPayment.date;
-
-                if (allCustomers[customerIndex].paidAmount >= allCustomers[customerIndex].totalAmount) {
-                    allCustomers[customerIndex].status = 'completed';
-                }
-
-                Storage.save('customers', allCustomers);
-
-                loadData();
-
-                setPaymentAmount('');
-                setShowAddPayment(false);
-
-                // Check if completed
-                if (allCustomers[customerIndex].paidAmount >= allCustomers[customerIndex].totalAmount) {
-                    if (confirm('Payment completed! 🎉 Send congratulations message via WhatsApp?')) {
-                        WhatsAppService.sendCompletionMessage(customer);
-                    }
+            // Check if completed
+            const updatedCustomer = await db.customers.get(customerId);
+            if (updatedCustomer && updatedCustomer.paidAmount >= updatedCustomer.totalAmount) {
+                if (confirm('Payment completed! 🎉 Send congratulations message via WhatsApp?')) {
+                    WhatsAppService.sendCompletionMessage(updatedCustomer);
                 }
             }
         } catch (error) {
@@ -125,42 +103,19 @@ export default function CustomerDetailPage() {
         }
     };
 
-    const handleDeletePayment = (paymentId: number) => {
+    const handleDeletePayment = async (paymentId: number) => {
         if (!confirm('Delete this payment? This cannot be undone.')) return;
 
         try {
-            const allPayments = Storage.get<Payment[]>('payments', []);
-            const payment = allPayments.find(p => p.id === paymentId);
-
-            if (payment) {
-                const filteredPayments = allPayments.filter(p => p.id !== paymentId);
-                Storage.save('payments', filteredPayments);
-
-                const allCustomers = Storage.get<Customer[]>('customers', []);
-                const customerIndex = allCustomers.findIndex(c => c.id === payment.customerId);
-
-                if (customerIndex !== -1) {
-                    allCustomers[customerIndex].paidAmount -= payment.amount;
-                    allCustomers[customerIndex].status = 'active';
-
-                    const remainingPayments = filteredPayments.filter(p => p.customerId === payment.customerId);
-                    if (remainingPayments.length > 0) {
-                        remainingPayments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                        allCustomers[customerIndex].lastPayment = remainingPayments[0].date;
-                    }
-
-                    Storage.save('customers', allCustomers);
-                }
-
-                loadData();
-            }
+            await deletePayment(paymentId);
+            await loadData();
         } catch (error) {
             console.error('Error deleting payment:', error);
             alert('Failed to delete payment.');
         }
     };
 
-    const handleDelete = () => {
+    const handleDelete = async () => {
         if (!customer) return;
 
         if (!confirm('Are you sure you want to delete this customer? This action cannot be undone.')) {
@@ -168,13 +123,8 @@ export default function CustomerDetailPage() {
         }
 
         try {
-            const allCustomers = Storage.get<Customer[]>('customers', []);
-            const filtered = allCustomers.filter(c => c.id !== customer.id);
-            Storage.save('customers', filtered);
-
-            const allPayments = Storage.get<Payment[]>('payments', []);
-            const filteredPayments = allPayments.filter(p => p.customerId !== customer.id);
-            Storage.save('payments', filteredPayments);
+            await db.customers.delete(customer.id);
+            await db.payments.where('customerId').equals(customer.id).delete();
 
             router.push('/customers');
         } catch (error) {
@@ -201,7 +151,6 @@ export default function CustomerDetailPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
-            {/* Header */}
             <div className="bg-white border-b px-4 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
@@ -240,7 +189,6 @@ export default function CustomerDetailPage() {
             </div>
 
             <div className="p-4 space-y-4">
-                {/* Customer Info Card */}
                 <div className="bg-white rounded-2xl p-6 shadow-sm">
                     <div className="flex items-start gap-4 mb-6">
                         <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-2xl overflow-hidden flex-shrink-0">
@@ -275,7 +223,6 @@ export default function CustomerDetailPage() {
                         </div>
                     </div>
 
-                    {/* Status Badge */}
                     <div className="flex items-center justify-between mb-4">
                         <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(isCompleted, daysOverdue)}`}>
                             {getStatusLabel(isCompleted, daysOverdue)}
@@ -285,7 +232,6 @@ export default function CustomerDetailPage() {
                         </span>
                     </div>
 
-                    {/* Progress Bar */}
                     <div className="mb-4">
                         <div className="flex justify-between text-sm mb-2">
                             <span className="font-medium">Payment Progress</span>
@@ -301,7 +247,6 @@ export default function CustomerDetailPage() {
                         </div>
                     </div>
 
-                    {/* Amount Details */}
                     <div className="grid grid-cols-3 gap-4 pt-4 border-t">
                         <div>
                             <p className="text-xs text-gray-500 mb-1">Total</p>
@@ -318,7 +263,6 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* Quick Actions */}
                 <div className="grid grid-cols-2 gap-3">
                     <button
                         onClick={() => setShowAddPayment(true)}
@@ -340,7 +284,6 @@ export default function CustomerDetailPage() {
                     />
                 </div>
 
-                {/* Installment Info */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-blue-600" />
@@ -368,7 +311,6 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* Payment History */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                         <History className="w-5 h-5 text-blue-600" />
@@ -402,7 +344,6 @@ export default function CustomerDetailPage() {
                     )}
                 </div>
 
-                {/* Notes */}
                 {customer.notes && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <h3 className="font-semibold mb-2 flex items-center gap-2">
@@ -414,7 +355,6 @@ export default function CustomerDetailPage() {
                 )}
             </div>
 
-            {/* Add Payment Modal */}
             {showAddPayment && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
                     <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6">

@@ -1,4 +1,4 @@
-// src/app/customers/page.tsx
+// src/app/customers/page.tsx - FIXED
 "use client";
 
 import { Plus, Search } from "lucide-react";
@@ -8,31 +8,29 @@ import CustomerCard from "@/components/CustomerCard";
 import Navigation from "@/components/Navigation";
 import ProfileSwitcher from "@/components/ProfileSwitcher";
 import { Storage } from "@/lib/storage";
-import type { Customer, Profile } from "@/types";
+import type { Profile } from "@/types";
+import { useCustomers } from "@/hooks/useCustomers";
 
 export default function CustomersPage() {
     const router = useRouter();
     const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
-    const [customers, setCustomers] = useState<Customer[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [filterType, setFilterType] = useState("all");
 
+    const { customers } = useCustomers(currentProfile?.id);
+
     useEffect(() => {
         loadData();
-        Storage.healthCheck();
     }, []);
 
-    const loadData = () => {
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+    const loadData = async () => {
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
             return;
         }
 
         setCurrentProfile(profile);
-
-        const allCustomers = Storage.get<Customer[]>("customers", []);
-        setCustomers(allCustomers.filter((c) => c.profileId === profile.id));
     };
 
     const filteredCustomers = customers.filter((c) => {
@@ -62,7 +60,6 @@ export default function CustomersPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
-            {/* Header */}
             <div className="bg-white border-b px-4 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                     <div>
@@ -77,7 +74,6 @@ export default function CustomersPage() {
                     />
                 </div>
 
-                {/* Search */}
                 <div className="relative mb-3">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
@@ -89,7 +85,6 @@ export default function CustomersPage() {
                     />
                 </div>
 
-                {/* Filters */}
                 <div className="flex gap-2 overflow-x-auto pb-2">
                     {[
                         { id: "all", label: "All", count: customers.length },
@@ -112,7 +107,6 @@ export default function CustomersPage() {
                 </div>
             </div>
 
-            {/* Customer List */}
             <div className="p-4 space-y-4">
                 {filteredCustomers.length === 0 ? (
                     <div className="text-center py-12">
@@ -144,7 +138,6 @@ export default function CustomersPage() {
                 )}
             </div>
 
-            {/* Floating Add Button */}
             <button
                 type="button"
                 onClick={() => router.push("/customers/add")}
