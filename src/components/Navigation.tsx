@@ -23,15 +23,9 @@ export default function Navigation({ currentPage }: NavigationProps) {
         { id: 'customers', icon: Users, label: 'Customers', path: '/customers' },
         { id: 'daily', icon: CheckSquare, label: 'Daily', path: '/daily' },
         { id: 'pending', icon: Clock, label: 'Pending', path: '/pending' },
-        { id: 'more', icon: Menu, label: 'More', path: '#', action: () => setShowMore(!showMore) },
-    ];
-
-    // ✅ SECONDARY NAVIGATION (In "More" menu)
-    const secondaryNav = [
-        { id: 'analytics', icon: TrendingUp, label: 'Analytics', path: '/analytics' },
-        { id: 'backup', icon: Cloud, label: 'Backup', path: '/backup' },
         { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' },
     ];
+
 
     return (
         <>
