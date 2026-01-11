@@ -19,7 +19,7 @@ export default function Navigation({ currentPage }: NavigationProps) {
     const primaryNav = [
         { id: 'dashboard', icon: LayoutDashboard, label: 'Home', path: '/dashboard' },
         { id: 'customers', icon: Users, label: 'Customers', path: '/customers' },
-        { id: 'collection', icon: CheckSquare, label: 'Daily', path: '/collection' },
+        { id: 'collection', icon: CheckSquare, label: 'Collection', path: '/collection' },
         { id: 'pending', icon: Clock, label: 'Pending', path: '/pending' },
         { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' },
     ];

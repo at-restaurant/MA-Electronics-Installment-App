@@ -443,9 +443,42 @@ export default function SettingsPage() {
                         <Bell className="w-5 h-5 text-blue-600" />
                         Notifications
                     </h3>
+
+                    {/* Permission Status */}
+                    {'Notification' in window && (
+                        <div className={`mb-4 p-3 rounded-lg border-2 ${
+                            Notification.permission === 'granted'
+                                ? 'bg-green-50 border-green-200'
+                                : 'bg-orange-50 border-orange-200'
+                        }`}>
+                            <p className="text-sm font-medium">
+                                {Notification.permission === 'granted'
+                                    ? '✅ Notifications Enabled'
+                                    : '⚠️ Notifications Disabled'}
+                            </p>
+                            {Notification.permission !== 'granted' && (
+                                <button
+                                    onClick={async () => {
+                                        const permission = await Notification.requestPermission();
+                                        if (permission === 'granted') {
+                                            alert('✅ Notifications enabled!');
+                                            window.location.reload();
+                                        }
+                                    }}
+                                    className="mt-2 text-sm text-blue-600 font-medium"
+                                >
+                                    Enable Now →
+                                </button>
+                            )}
+                        </div>
+                    )}
+
                     <div className="space-y-3">
                         <label className="flex items-center justify-between py-2 cursor-pointer">
-                            <span className="text-sm font-medium">Enable Notifications</span>
+                            <div>
+                                <span className="text-sm font-medium">Enable Notifications</span>
+                                <p className="text-xs text-gray-500">Master switch for all notifications</p>
+                            </div>
                             <input
                                 type="checkbox"
                                 checked={notifications.enableNotifications}
@@ -453,24 +486,60 @@ export default function SettingsPage() {
                                 className="w-5 h-5 text-blue-600 rounded cursor-pointer"
                             />
                         </label>
+
                         <label className="flex items-center justify-between py-2 cursor-pointer">
-                            <span className="text-sm font-medium">Payment Reminders</span>
+                            <div>
+                                <span className="text-sm font-medium">Payment Reminders</span>
+                                <p className="text-xs text-gray-500">Daily payment due notifications</p>
+                            </div>
                             <input
                                 type="checkbox"
                                 checked={notifications.paymentReminders}
                                 onChange={() => handleNotificationToggle('paymentReminders')}
-                                className="w-5 h-5 text-blue-600 rounded cursor-pointer"
+                                disabled={!notifications.enableNotifications}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer disabled:opacity-50"
                             />
                         </label>
+
                         <label className="flex items-center justify-between py-2 cursor-pointer">
-                            <span className="text-sm font-medium">Overdue Alerts</span>
+                            <div>
+                                <span className="text-sm font-medium">Overdue Alerts</span>
+                                <p className="text-xs text-gray-500">7+ days overdue warnings</p>
+                            </div>
                             <input
                                 type="checkbox"
                                 checked={notifications.overdueAlerts}
                                 onChange={() => handleNotificationToggle('overdueAlerts')}
-                                className="w-5 h-5 text-blue-600 rounded cursor-pointer"
+                                disabled={!notifications.enableNotifications}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer disabled:opacity-50"
                             />
                         </label>
+
+                        <label className="flex items-center justify-between py-2 cursor-pointer">
+                            <div>
+                                <span className="text-sm font-medium">Daily Summary</span>
+                                <p className="text-xs text-gray-500">End of day collection report</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={notifications.dailySummary}
+                                onChange={() => handleNotificationToggle('dailySummary')}
+                                disabled={!notifications.enableNotifications}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer disabled:opacity-50"
+                            />
+                        </label>
+
+                        {/* Test Notification Button */}
+                        <button
+                            onClick={async () => {
+                                const { getNotificationManager } = await import('@/lib/notificationManager');
+                                const manager = getNotificationManager();
+                                await manager.testNotification();
+                            }}
+                            className="w-full mt-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100"
+                        >
+                            🔔 Test Notification
+                        </button>
                     </div>
                 </div>
 

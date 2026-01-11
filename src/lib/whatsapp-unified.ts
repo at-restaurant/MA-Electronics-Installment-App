@@ -1,67 +1,66 @@
-// src/lib/whatsapp-unified.ts - FIXED for Build
+// src/lib/whatsapp-unified.ts - Roman Urdu WITHOUT EMOJIS
 
 import { formatCurrency, formatDate } from './utils';
 import { db } from './db';
 import type { Customer, WhatsAppQueue } from '@/types';
 
 // ============================================
-// MESSAGE TEMPLATES (Roman Urdu)
+// MESSAGE TEMPLATES (Roman Urdu - NO EMOJIS)
 // ============================================
 
 const Templates = {
     welcome: (customer: Pick<Customer, 'name' | 'totalAmount' | 'installmentAmount' | 'startDate'>) => `
-*Assalam-o-Alaikum ${customer.name} Sahab!* 🙏
+Assalam-o-Alaikum ${customer.name} Sahab!
 
-Aap ka *MA Electronics* mein bohot bohot shukria!
+Aap ka MA Electronics mein bohot bohot shukria!
 
-📋 *Aap ki Qist ki Tafseel:*
-━━━━━━━━━━━━━━━━
-💰 Kul Raqam: *${formatCurrency(customer.totalAmount)}*
-📅 Qist: *${formatCurrency(customer.installmentAmount)}*
-📆 Shuru: ${formatDate(customer.startDate)}
+Aap ki Qist ki Tafseel:
+Kul Raqam: ${formatCurrency(customer.totalAmount)}
+Qist: ${formatCurrency(customer.installmentAmount)}
+Shuru: ${formatDate(customer.startDate)}
 
-_MA Electronics - Aap ka Bharosa_
+MA Electronics - Aap ka Bharosa
   `.trim(),
 
     payment: (customer: Pick<Customer, 'name'>, amount: number, remaining: number) => `
-✅ *Qist Wusool Ho Gayi!*
+Qist Wusool Ho Gayi!
 
-*${customer.name} Sahab*,
-💰 Wusool: *${formatCurrency(amount)}*
-📊 Baaqi: *${formatCurrency(remaining)}*
+${customer.name} Sahab,
+Wusool: ${formatCurrency(amount)}
+Baaqi: ${formatCurrency(remaining)}
 
-🙏 Shukria!
-_MA Electronics_
+Shukria!
+MA Electronics
   `.trim(),
 
     reminder: (customer: Pick<Customer, 'name' | 'installmentAmount'>, remaining: number) => `
-*Assalam-o-Alaikum ${customer.name} Sahab!* 🙏
+Assalam-o-Alaikum ${customer.name} Sahab!
 
-💰 Baaqi: *${formatCurrency(remaining)}*
-📅 Qist: *${formatCurrency(customer.installmentAmount)}*
+Baaqi: ${formatCurrency(remaining)}
+Qist: ${formatCurrency(customer.installmentAmount)}
 
-_MA Electronics_
+MA Electronics
   `.trim(),
 
     overdue: (customer: Pick<Customer, 'name'>, days: number, remaining: number) => `
-⚠️ *Yaad Dehani* ⚠️
+Yaad Dehani
 
-*${customer.name} Sahab*,
-Qist *${days} din* takheer mein hai.
-💰 Baaqi: *${formatCurrency(remaining)}*
+${customer.name} Sahab,
+Qist ${days} din takheer mein hai.
+Baaqi: ${formatCurrency(remaining)}
 
-🙏 Jald ada karen
-_MA Electronics_
+Jald ada karen
+MA Electronics
   `.trim(),
 
     completion: (customer: Pick<Customer, 'name' | 'totalAmount'>) => `
-🎉 *MUBARAK HO!* 🎉
+MUBARAK HO!
 
-*${customer.name} Sahab* ne tamam qistain mukammal kar lein!
-💰 ${formatCurrency(customer.totalAmount)}
+${customer.name} Sahab ne tamam qistain mukammal kar lein!
+${formatCurrency(customer.totalAmount)}
 
-✨ Bohot shukria!
-_MA Electronics_
+Bohot shukria!
+MA Electronics
   `.trim(),
 };
 
@@ -156,7 +155,7 @@ export class WhatsAppService {
                     await db.removeFromWhatsAppQueue(item.id);
                 }
 
-                console.log(`✅ Sent queued message to ${item.phone.substring(0, 5)}***`);
+                console.log(`Sent queued message to ${item.phone.substring(0, 5)}***`);
             } catch (error) {
                 console.error(`Failed to send message:`, error);
                 // Increment attempts

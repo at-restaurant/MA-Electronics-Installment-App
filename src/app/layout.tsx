@@ -1,4 +1,4 @@
-// src/app/layout.tsx - FIXED Auto-Scheduler Import
+// src/app/layout.tsx - WITH NOTIFICATIONS ENABLED
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
@@ -6,6 +6,7 @@ import '@/app/globals.css';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { DatabaseInitializer } from '@/components/DatabaseInitializer';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { NotificationInitializer } from '@/components/NotificationInitializer';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -54,9 +55,13 @@ export default function RootLayout({
         {/* Show offline/online status */}
         <OfflineIndicator />
 
+        {/* Notification system */}
+        <NotificationInitializer />
+
         {/* App content */}
         {children}
 
+        {/* Install prompt */}
         <InstallPrompt />
 
         {/* Service Worker Registration */}
@@ -87,6 +92,13 @@ export default function RootLayout({
                     .catch(err => {
                       console.log('❌ Service Worker registration failed:', err);
                     });
+                });
+              }
+              
+              // Initialize notification scheduler
+              if ('Notification' in window) {
+                import('/src/lib/notificationScheduler.js').then(module => {
+                  module.NotificationScheduler.start();
                 });
               }
             `,

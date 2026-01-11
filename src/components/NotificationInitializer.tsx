@@ -1,3 +1,5 @@
+// src/components/NotificationInitializer.tsx - PRODUCTION READY
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -17,8 +19,11 @@ export function NotificationInitializer() {
             const manager = getNotificationManager();
             const hasPermission = await manager.requestPermission();
 
-            if (! hasPermission && ! initialized) {
-                setShowPrompt(true);
+            if (!hasPermission && !initialized) {
+                // Show prompt after 5 seconds
+                setTimeout(() => {
+                    setShowPrompt(true);
+                }, 5000);
             }
 
             setInitialized(true);
@@ -33,7 +38,7 @@ export function NotificationInitializer() {
             const granted = await manager.requestPermission();
 
             if (granted) {
-                await manager.sendNotification('Notifications Enabled!  🔔', {
+                await manager.sendNotification('Notifications Enabled! 🔔', {
                     body: 'You will now receive payment reminders and alerts.',
                     tag: 'notification-enabled',
                 });
@@ -48,9 +53,11 @@ export function NotificationInitializer() {
 
     const handleDismiss = () => {
         setShowPrompt(false);
+        // Don't ask again for 7 days
+        localStorage.setItem('notification_dismissed', Date.now().toString());
     };
 
-    if (! showPrompt) return null;
+    if (!showPrompt) return null;
 
     return (
         <div className="fixed bottom-4 right-4 z-50 max-w-sm">
@@ -61,7 +68,7 @@ export function NotificationInitializer() {
                             <Bell className="w-5 h-5 text-blue-600 flex-shrink-0" />
                         </div>
                         <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 mb-1">Enable Notifications? </h3>
+                            <h3 className="font-semibold text-gray-900 mb-1">Enable Notifications?</h3>
                             <p className="text-sm text-gray-600">
                                 Get reminders for payment due dates and overdue alerts.
                             </p>

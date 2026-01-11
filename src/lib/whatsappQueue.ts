@@ -249,8 +249,7 @@ export class WhatsAppQueueService {
                     icon: '/icon-192x192.png',
                     tag: `admin-${Date.now()}`,
                 });
-            } catch (error) {
-                console.error('Failed to send admin notification:', error);
+            } catch (error) {               console.error('Failed to send admin notification:', error);
             }
         }
     }
