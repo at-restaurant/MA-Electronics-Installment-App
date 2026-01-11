@@ -1,4 +1,4 @@
-// src/app/dashboard/page.tsx - COMPACT INVESTMENT DESIGN
+// src/app/dashboard/page.tsx - WITH ONLINE/OFFLINE BREAKDOWN
 
 'use client';
 
@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Users, TrendingUp, AlertCircle, Plus, Edit2, Trash2,
-    DollarSign, ArrowRight, ChevronDown, ChevronUp
+    DollarSign, ArrowRight, ChevronDown, ChevronUp, CreditCard, Banknote
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -28,9 +28,10 @@ export default function DashboardPage() {
         totalReceived: 0,
         totalExpected: 0,
         collectionRate: 0,
+        onlinePayments: 0, // ✅ NEW
+        offlinePayments: 0, // ✅ NEW
     });
 
-    // Investment state
     const [showInvestmentForm, setShowInvestmentForm] = useState(false);
     const [showInvestmentHistory, setShowInvestmentHistory] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -50,6 +51,18 @@ export default function DashboardPage() {
             const allCustomers = await db.getCustomersByProfile(currentProfile!.id);
             setCustomers(allCustomers);
 
+            // ✅ GET ALL PAYMENTS
+            const allPayments = await db.getPaymentsByProfile(currentProfile!.id);
+
+            // ✅ CALCULATE ONLINE/OFFLINE
+            const onlineTotal = allPayments
+                .filter(p => p.paymentSource === 'online')
+                .reduce((sum, p) => sum + p.amount, 0);
+
+            const offlineTotal = allPayments
+                .filter(p => p.paymentSource === 'offline')
+                .reduce((sum, p) => sum + p.amount, 0);
+
             const statsData = await db.calculateStatistics(currentProfile!.id);
             setStats({
                 totalCustomers: statsData.totalCustomers,
@@ -58,6 +71,8 @@ export default function DashboardPage() {
                 totalReceived: statsData.totalReceived,
                 totalExpected: statsData.totalExpected,
                 collectionRate: statsData.collectionRate,
+                onlinePayments: onlineTotal, // ✅ SET
+                offlinePayments: offlineTotal, // ✅ SET
             });
         } catch (error) {
             console.error('Failed to load dashboard data:', error);
@@ -162,12 +177,31 @@ export default function DashboardPage() {
             <GlobalHeader title="Dashboard" />
 
             <div className="pt-16 p-4 space-y-4">
-                {/* Stats Grid */}
+                {/* ✅ UPDATED STATS WITH ONLINE/OFFLINE BREAKDOWN */}
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white shadow-lg">
+                    {/* Total Received - Now clickable to show breakdown */}
+                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white shadow-lg col-span-2">
                         <DollarSign className="w-8 h-8 mb-2 opacity-80" />
                         <p className="text-sm opacity-90 mb-1">Total Received</p>
-                        <p className="text-2xl font-bold">{formatCurrency(stats.totalReceived)}</p>
+
+                        <p className="text-3xl font-bold mb-3">{formatCurrency(stats.totalReceived)}</p>
+                        {/* ✅ BREAKDOWN */}
+                        <div className="grid grid-cols-2 gap-2 pt-3 border-t border-white/20">
+                            <div className="bg-white/10 rounded-lg p-2">
+                                <div className="flex items-center gap-1 mb-1">
+                                    <CreditCard className="w-3 h-3" />
+                                    <p className="text-xs opacity-80">Online</p>
+                                </div>
+                                <p className="text-lg font-bold">{formatCurrency(stats.onlinePayments)}</p>
+                            </div>
+                            <div className="bg-white/10 rounded-lg p-2">
+                                <div className="flex items-center gap-1 mb-1">
+                                    <Banknote className="w-3 h-3" />
+                                    <p className="text-xs opacity-80">Cash</p>
+                                </div>
+                                <p className="text-lg font-bold">{formatCurrency(stats.offlinePayments)}</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white shadow-lg">
@@ -182,16 +216,15 @@ export default function DashboardPage() {
                         <p className="text-2xl font-bold">{stats.totalCustomers}</p>
                     </div>
 
-                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg">
+                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg col-span-2">
                         <TrendingUp className="w-8 h-8 mb-2 opacity-80" />
                         <p className="text-sm opacity-90 mb-1">Collection Rate</p>
                         <p className="text-2xl font-bold">{Math.round(stats.collectionRate)}%</p>
                     </div>
                 </div>
 
-                {/* ✅ COMPACT Investment Section */}
+                {/* Investment Section */}
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                    {/* Header - Always Visible */}
                     <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 border-b">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -214,7 +247,6 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    {/* Add Form - Collapsible */}
                     {showInvestmentForm && (
                         <div className="p-4 border-b bg-purple-50">
                             <div className="space-y-3">
@@ -255,16 +287,15 @@ export default function DashboardPage() {
                         </div>
                     )}
 
-                    {/* History Toggle - Only if entries exist */}
                     {totalHistory.length > 0 && (
                         <>
                             <button
                                 onClick={() => setShowInvestmentHistory(!showInvestmentHistory)}
                                 className="w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
                             >
-                                <span className="text-sm font-medium text-gray-700">
-                                    History ({totalHistory.length} entries)
-                                </span>
+                            <span className="text-sm font-medium text-gray-700">
+                                History ({totalHistory.length} entries)
+                            </span>
                                 {showInvestmentHistory ? (
                                     <ChevronUp className="w-4 h-4 text-gray-500" />
                                 ) : (
@@ -272,7 +303,6 @@ export default function DashboardPage() {
                                 )}
                             </button>
 
-                            {/* History List - Collapsible */}
                             {showInvestmentHistory && (
                                 <div className="max-h-60 overflow-y-auto border-t">
                                     {totalHistory

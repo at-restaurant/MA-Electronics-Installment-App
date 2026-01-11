@@ -1,4 +1,4 @@
-// src/app/customers/[id]/page.tsx - WITH GUARANTOR + CNIC DISPLAY
+// src/app/customers/[id]/page.tsx - ADD PAYMENT SOURCE
 
 'use client';
 
@@ -11,7 +11,7 @@ import {
 import WhatsAppButton from '@/components/WhatsAppButton';
 import GlobalHeader from '@/components/GlobalHeader';
 import { db } from '@/lib/db';
-import { WhatsAppService } from '@/lib/whatsapp';
+import { WhatsAppService } from '@/lib/whatsapp-unified';
 import { useProfile, useModal } from '@/hooks/useCompact';
 import {
     formatCurrency,
@@ -35,6 +35,7 @@ export default function CustomerDetailPage() {
 
     const paymentModal = useModal();
     const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentSource, setPaymentSource] = useState<'online' | 'offline'>('offline'); // ✅ NEW
 
     const { payments, addPayment, deletePayment } = usePayments(customerId);
 
@@ -73,16 +74,18 @@ export default function CustomerDetailPage() {
                 customerId: customer.id,
                 amount,
                 date: new Date().toISOString().split('T')[0],
+                paymentSource, // ✅ SAVE SOURCE
             });
 
             await loadCustomer();
             setPaymentAmount('');
+            setPaymentSource('offline'); // ✅ RESET
             paymentModal.hide();
 
             const updatedCustomer = await db.customers.get(customerId);
             if (updatedCustomer && updatedCustomer.paidAmount >= updatedCustomer.totalAmount) {
                 if (confirm('Payment completed! 🎉 Send congratulations via WhatsApp?')) {
-                    WhatsAppService.sendCompletionMessage(updatedCustomer);
+                    WhatsAppService.sendCompletion(updatedCustomer);
                 }
             }
         } catch (error) {
@@ -122,7 +125,6 @@ export default function CustomerDetailPage() {
         }
     };
 
-    // ✅ Toggle Auto-Messaging
     const toggleAutoMessaging = async () => {
         if (!customer) return;
 
@@ -209,7 +211,6 @@ export default function CustomerDetailPage() {
                         </div>
                     </div>
 
-                    {/* ✅ CNIC Photo Display */}
                     {customer.cnicPhoto && (
                         <div className="mb-4">
                             <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
@@ -233,7 +234,6 @@ export default function CustomerDetailPage() {
                         </span>
                     </div>
 
-                    {/* Progress Bar */}
                     <div className="mb-4">
                         <div className="flex justify-between text-sm mb-2">
                             <span className="font-medium">Payment Progress</span>
@@ -249,7 +249,6 @@ export default function CustomerDetailPage() {
                         </div>
                     </div>
 
-                    {/* Amount Summary */}
                     <div className="grid grid-cols-3 gap-4 pt-4 border-t">
                         <div>
                             <p className="text-xs text-gray-500 mb-1">Total</p>
@@ -266,7 +265,6 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* ✅ Auto-Message Toggle */}
                 <button
                     onClick={toggleAutoMessaging}
                     className={`w-full p-4 rounded-xl border-2 transition-all ${
@@ -291,7 +289,6 @@ export default function CustomerDetailPage() {
                     </div>
                 </button>
 
-                {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-3">
                     <button
                         onClick={() => paymentModal.show()}
@@ -313,7 +310,6 @@ export default function CustomerDetailPage() {
                     />
                 </div>
 
-                {/* ✅ Guarantors Section */}
                 {customer.guarantors && customer.guarantors.length > 0 && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -346,7 +342,6 @@ export default function CustomerDetailPage() {
                     </div>
                 )}
 
-                {/* Installment Details */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-blue-600" />
@@ -374,7 +369,7 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* Payment History */}
+                {/* ✅ PAYMENT HISTORY WITH SOURCE */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                         <History className="w-5 h-5 text-blue-600" />
@@ -393,6 +388,10 @@ export default function CustomerDetailPage() {
                                         <div className="flex-1 min-w-0">
                                             <p className="font-medium">{formatCurrency(payment.amount)}</p>
                                             <p className="text-sm text-gray-500">{formatDate(payment.date)}</p>
+                                            {/* ✅ SHOW PAYMENT SOURCE */}
+                                            <p className="text-xs text-gray-400 mt-0.5">
+                                                {payment.paymentSource === 'online' ? '💳 Online Transfer' : '💵 Cash/Check'}
+                                            </p>
                                         </div>
                                     </div>
                                     <button
@@ -408,7 +407,6 @@ export default function CustomerDetailPage() {
                     )}
                 </div>
 
-                {/* Notes */}
                 {customer.notes && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <h3 className="font-semibold mb-2 flex items-center gap-2">
@@ -420,7 +418,7 @@ export default function CustomerDetailPage() {
                 )}
             </div>
 
-            {/* Add Payment Modal */}
+            {/* ✅ ADD PAYMENT MODAL WITH SOURCE SELECTION */}
             {paymentModal.open && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
                     <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6">
@@ -455,6 +453,40 @@ export default function CustomerDetailPage() {
                                     Remaining: {formatCurrency(Math.max(0, remaining))}
                                 </p>
                             </div>
+
+                            {/* ✅ PAYMENT SOURCE SELECTOR */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Payment Source
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentSource('offline')}
+                                        className={`py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                                            paymentSource === 'offline'
+                                                ? 'bg-blue-600 text-white shadow-lg'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        <span>💵</span>
+                                        <span>Cash/Check</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentSource('online')}
+                                        className={`py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                                            paymentSource === 'online'
+                                                ? 'bg-blue-600 text-white shadow-lg'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        <span>💳</span>
+                                        <span>Online</span>
+                                    </button>
+                                </div>
+                            </div>
+
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => paymentModal.hide()}
