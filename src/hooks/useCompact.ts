@@ -1,13 +1,8 @@
-// src/hooks/useCompact.ts - Less Code, More Features
+// src/hooks/useCompact.ts - FIXED
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Storage } from '@/lib/storage';
 import { db } from '@/lib/db';
 import type { Profile, Customer } from '@/types';
-
-// ============================================
-// COMPACT FORM HOOK
-// ============================================
 
 export function useForm<T extends Record<string, any>>(initial: T) {
     const [data, setData] = useState(initial);
@@ -38,10 +33,6 @@ export function useForm<T extends Record<string, any>>(initial: T) {
     return { data, set, errors, validate, reset, setData };
 }
 
-// ============================================
-// COMPACT PROFILE HOOK
-// ============================================
-
 export function useProfile() {
     const router = useRouter();
     const [profile, setProfile] = useState<Profile | null>(null);
@@ -52,7 +43,7 @@ export function useProfile() {
     }, []);
 
     const loadProfile = async () => {
-        const p = await Storage.get<Profile | null>('currentProfile', null);
+        const p = await db.getMeta<Profile | null>('currentProfile', null);
         if (!p) {
             router.push('/');
             return;
@@ -63,10 +54,6 @@ export function useProfile() {
 
     return { profile, loading, reload: loadProfile };
 }
-
-// ============================================
-// COMPACT CUSTOMERS HOOK
-// ============================================
 
 export function useCompactCustomers(profileId?: number) {
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -101,7 +88,7 @@ export function useCompactCustomers(profileId?: number) {
     };
 
     const remove = async (id: number) => {
-        await db.transaction('rw', db.customers, db.payments, async () => {
+        await db.transaction('rw', [db.customers, db.payments], async () => {
             await db.customers.delete(id);
             await db.payments.where('customerId').equals(id).delete();
         });
@@ -118,10 +105,6 @@ export function useCompactCustomers(profileId?: number) {
 
     return { customers, loading, add, update, remove, reload: load, stats };
 }
-
-// ============================================
-// VALIDATION RULES
-// ============================================
 
 export const Rules = {
     required: (msg = 'Required') => (val: any) =>
@@ -140,10 +123,6 @@ export const Rules = {
         val && !/^\d{5}-\d{7}-\d{1}$/.test(val) ? msg : null,
 };
 
-// ============================================
-// COMPACT MODAL HOOK
-// ============================================
-
 export function useModal() {
     const [open, setOpen] = useState(false);
     const [data, setData] = useState<any>(null);
@@ -161,11 +140,7 @@ export function useModal() {
     return { open, data, show, hide };
 }
 
-// ============================================
-// COMPACT FILTER HOOK
-// ============================================
-
-export function useFilter<T>(
+export function useFilter<T extends Record<string, any>>(
     items: T[],
     searchFields: (keyof T)[]
 ) {
@@ -173,7 +148,6 @@ export function useFilter<T>(
     const [filter, setFilter] = useState('all');
 
     const filtered = items.filter(item => {
-        // Search filter
         if (query) {
             const matches = searchFields.some(field =>
                 String(item[field])
@@ -183,10 +157,9 @@ export function useFilter<T>(
             if (!matches) return false;
         }
 
-        // Status filter
         if (filter !== 'all') {
-            if (!item.hasOwnProperty('status')) return true;
-            if ((item as any).status !== filter) return false;
+            const status = (item as any).status;
+            if (status !== undefined && status !== filter) return false;
         }
 
         return true;
@@ -194,40 +167,3 @@ export function useFilter<T>(
 
     return { query, setQuery, filter, setFilter, filtered };
 }
-
-// ============================================
-// EXAMPLE USAGE
-// ============================================
-
-/*
-// Form with validation
-const { data, set, errors, validate } = useForm({
-  name: '',
-  phone: '',
-  amount: '',
-});
-
-const rules = {
-  name: Rules.required(),
-  phone: Rules.phone(),
-  amount: Rules.min(0),
-};
-
-if (validate(rules)) {
-  // Submit
-}
-
-// Profile management
-const { profile, loading } = useProfile();
-
-// Customers with built-in stats
-const { customers, stats, add, update, remove } = useCompactCustomers(profile?.id);
-
-// Modal
-const modal = useModal();
-modal.show({ customer });
-if (modal.open) { ... }
-
-// Filter
-const { query, setQuery, filtered } = useFilter(customers, ['name', 'phone']);
-*/

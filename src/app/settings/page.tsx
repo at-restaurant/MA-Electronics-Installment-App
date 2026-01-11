@@ -1,19 +1,19 @@
-// src/app/settings/page.tsx - COMPLETELY FIXED
-
+// src/app/settings/page.tsx - FIXED with WhatsApp Queue Status
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
     Bell, Smartphone, Info, Trash2, Download, Upload, Briefcase,
-    Plus, X, Tag, HardDrive, Sparkles, Volume2, VolumeX, BellRing
+    Plus, X, Tag, HardDrive, Sparkles, Volume2, VolumeX, BellRing, MessageSquare
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import GlobalHeader from "@/components/GlobalHeader";
 import ProfileManager from "@/components/ProfileManager";
 import { db } from "@/lib/db";
-import { OptimizedStorage } from "@/lib/storage-ultra-compressed";
 import { useProfile } from "@/hooks/useCompact";
+import { NotificationService } from "@/lib/notificationSound";
+import { WhatsAppQueueService } from "@/lib/whatsappQueue";
 import type { NotificationSettings } from "@/types";
 
 interface AppSettings {
@@ -41,8 +41,9 @@ export default function SettingsPage() {
         sizePretty: '0 KB',
         customers: 0,
         payments: 0,
-        canCleanup: false
     });
+
+    const [whatsappQueue, setWhatsappQueue] = useState({ count: 0, items: [] });
 
     const [appSettings, setAppSettings] = useState<AppSettings>({
         categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
@@ -55,6 +56,7 @@ export default function SettingsPage() {
     useEffect(() => {
         loadSettings();
         updateStorageInfo();
+        loadWhatsAppQueue();
         setupInstallPrompt();
     }, []);
 
@@ -68,7 +70,7 @@ export default function SettingsPage() {
 
     const handleInstallClick = async () => {
         if (!deferredPrompt) {
-            alert('App pehle se installed hai ya browser support nahi karta');
+            alert('App already installed or browser not supported');
             return;
         }
 
@@ -76,7 +78,7 @@ export default function SettingsPage() {
         const { outcome } = await deferredPrompt.userChoice;
 
         if (outcome === 'accepted') {
-            alert('✅ App install ho rahi hai!');
+            alert('✅ App installing!');
         }
 
         setDeferredPrompt(null);
@@ -84,33 +86,44 @@ export default function SettingsPage() {
     };
 
     const loadSettings = async () => {
-        // ✅ FIXED: Always provide default value
-        const defaultNotifications: NotificationSettings = {
+        const savedNotifications = await db.getMeta<NotificationSettings>('notifications', {
             enableNotifications: true,
             paymentReminders: true,
             overdueAlerts: true,
             dailySummary: false,
             reminderTime: '09:00',
             soundEnabled: true,
-        };
+        });
 
-        const savedNotifications = await db.getMeta<NotificationSettings>('notifications', defaultNotifications);
+        setNotifications(savedNotifications);
 
-        // ✅ FIXED: Use OR operator to ensure never undefined
-        setNotifications(savedNotifications || defaultNotifications);
-
-        const defaultAppSettings: AppSettings = {
+        const savedAppSettings = await db.getMeta<AppSettings>('app_settings', {
             categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
             defaultCategory: 'Electronics',
-        };
-
-        const savedAppSettings = await db.getMeta<AppSettings>('app_settings', defaultAppSettings);
-        setAppSettings(savedAppSettings || defaultAppSettings);
+        });
+        setAppSettings(savedAppSettings);
     };
 
     const updateStorageInfo = async () => {
-        const stats = await OptimizedStorage.getStorageStats();
-        setStorageInfo(stats);
+        const [customerCount, paymentCount, size] = await Promise.all([
+            db.customers.count(),
+            db.payments.count(),
+            db.getStorageSize(),
+        ]);
+
+        const sizeKB = Math.round(size / 1024);
+        const sizeMB = (size / (1024 * 1024)).toFixed(2);
+
+        setStorageInfo({
+            customers: customerCount,
+            payments: paymentCount,
+            sizePretty: sizeMB + ' MB',
+        });
+    };
+
+    const loadWhatsAppQueue = async () => {
+        const status = await WhatsAppQueueService.getQueueStatus();
+        setWhatsappQueue(status);
     };
 
     const handleNotificationToggle = async (key: keyof NotificationSettings) => {
@@ -118,53 +131,32 @@ export default function SettingsPage() {
         setNotifications(updated);
         await db.setMeta("notifications", updated);
 
-        // Request permission if enabling notifications
         if (key === 'enableNotifications' && updated.enableNotifications) {
-            if ('Notification' in window && Notification.permission === 'default') {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    new Notification('MA Electronics', {
-                        body: 'Notifications ab enabled hain! ✅',
-                        icon: '/icon-192x192.png',
-                    });
-                }
-            }
+            await NotificationService.requestPermission();
         }
     };
 
-    const testNotification = () => {
+    const testNotification = async () => {
         if (!notifications.enableNotifications) {
-            alert('Pehle notifications enable karein');
+            alert('Enable notifications first');
             return;
         }
 
-        if ('Notification' in window) {
-            if (Notification.permission === 'granted') {
-                new Notification('Test Notification 🔔', {
-                    body: 'Yeh aik test notification hai. Aap notifications receive kar sakte hain!',
-                    icon: '/icon-192x192.png',
-                    vibrate: [200, 100, 200],
-                });
-            } else if (Notification.permission === 'default') {
-                Notification.requestPermission().then(permission => {
-                    if (permission === 'granted') {
-                        new Notification('Test Notification 🔔', {
-                            body: 'Notifications ab kaam kar rahi hain!',
-                            icon: '/icon-192x192.png',
-                        });
-                    }
-                });
-            } else {
-                alert('⚠️ Notifications blocked hain. Browser settings mein allow karein.');
-            }
+        const granted = await NotificationService.requestPermission();
+        if (granted) {
+            await NotificationService.send(
+                'Test Notification 🔔',
+                'Notifications working!',
+                { sound: 'notification' }
+            );
         } else {
-            alert('⚠️ Aap ka browser notifications support nahi karta');
+            alert('⚠️ Notifications blocked. Enable in browser settings.');
         }
     };
 
     const handleAddCategory = async () => {
         if (!newCategory.trim() || appSettings.categories.includes(newCategory.trim())) {
-            alert(newCategory.trim() ? 'Category already exists' : 'Enter category name');
+            alert(newCategory.trim() ? 'Category exists' : 'Enter name');
             return;
         }
 
@@ -200,20 +192,35 @@ export default function SettingsPage() {
         await db.setMeta('app_settings', updated);
     };
 
-    const handleCleanupStorage = async () => {
-        if (!confirm('Clean up old completed records? This will archive customers completed over 3 months ago.')) return;
+    const handleProcessWhatsAppQueue = async () => {
+        await WhatsAppQueueService.processQueue();
+        await loadWhatsAppQueue();
+        alert('✅ Queue processed!');
+    };
 
-        const cleaned = await OptimizedStorage.cleanupOldData(3);
-        await updateStorageInfo();
-        alert(`✅ Cleaned ${cleaned} old records! Storage optimized.`);
+    const handleClearFailedMessages = async () => {
+        const count = await WhatsAppQueueService.clearFailedMessages();
+        await loadWhatsAppQueue();
+        alert(`🗑️ Cleared ${count} failed messages`);
     };
 
     const handleVacuum = async () => {
-        if (!confirm('Optimize database? This may take a few seconds.')) return;
+        if (!confirm('Optimize database?')) return;
 
-        await OptimizedStorage.vacuum();
+        const [customers, payments] = await Promise.all([
+            db.customers.toArray(),
+            db.payments.toArray(),
+        ]);
+
+        await db.transaction('rw', [db.customers, db.payments], async () => {
+            await db.customers.clear();
+            await db.payments.clear();
+            await db.customers.bulkAdd(customers);
+            await db.payments.bulkAdd(payments);
+        });
+
         await updateStorageInfo();
-        alert('✅ Database optimized successfully!');
+        alert('✅ Database optimized!');
     };
 
     const handleExportData = async () => {
@@ -225,7 +232,7 @@ export default function SettingsPage() {
         a.download = `ma-backup-${new Date().toISOString().split("T")[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        alert("✅ Data exported successfully!");
+        alert("✅ Data exported!");
     };
 
     const handleImportData = () => {
@@ -242,13 +249,13 @@ export default function SettingsPage() {
                 const success = await db.importAll(JSON.parse(text));
 
                 if (success) {
-                    alert("✅ Data imported successfully!");
+                    alert("✅ Data imported!");
                     window.location.reload();
                 } else {
-                    alert("❌ Import failed! Invalid backup file.");
+                    alert("❌ Import failed!");
                 }
             } catch {
-                alert("❌ Import failed! Invalid backup file.");
+                alert("❌ Invalid backup file!");
             }
         };
 
@@ -256,8 +263,8 @@ export default function SettingsPage() {
     };
 
     const handleClearData = async () => {
-        if (!confirm("Delete ALL data? This cannot be undone!")) return;
-        if (!confirm("Last warning! This action is PERMANENT. Continue?")) return;
+        if (!confirm("Delete ALL data? Cannot be undone!")) return;
+        if (!confirm("Last warning! PERMANENT action!")) return;
 
         await db.clearAll();
         alert("All data cleared");
@@ -269,22 +276,21 @@ export default function SettingsPage() {
             <GlobalHeader title="Settings" />
 
             <div className="pt-16 p-4 space-y-4">
-                {/* Install App Button */}
                 {isInstallable && (
                     <div className="bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 text-white shadow-lg">
                         <div className="flex items-center justify-between">
                             <div className="flex-1">
                                 <h3 className="font-bold mb-1 flex items-center gap-2">
                                     <Smartphone className="w-5 h-5" />
-                                    App Install Karein
+                                    Install App
                                 </h3>
                                 <p className="text-sm opacity-90">
-                                    Apne phone par install kar ke offline use karein
+                                    Install for offline use
                                 </p>
                             </div>
                             <button
                                 onClick={handleInstallClick}
-                                className="px-4 py-2 bg-white text-blue-600 rounded-lg font-medium hover:bg-blue-50 transition-colors ml-3"
+                                className="px-4 py-2 bg-white text-blue-600 rounded-lg font-medium hover:bg-blue-50"
                             >
                                 Install
                             </button>
@@ -292,7 +298,6 @@ export default function SettingsPage() {
                     </div>
                 )}
 
-                {/* Profile Management */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Briefcase className="w-5 h-5 text-blue-600" />
@@ -300,10 +305,34 @@ export default function SettingsPage() {
                     </h3>
                     <button
                         onClick={() => setShowProfileManager(true)}
-                        className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors"
+                        className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100"
                     >
                         Manage Profiles
                     </button>
+                </div>
+
+                {/* WhatsApp Queue Status */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <MessageSquare className="w-5 h-5 text-green-600" />
+                        WhatsApp Queue ({whatsappQueue.count})
+                    </h3>
+                    <div className="space-y-2">
+                        <button
+                            onClick={handleProcessWhatsAppQueue}
+                            className="w-full py-2.5 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100"
+                        >
+                            Process Queue Now
+                        </button>
+                        {whatsappQueue.count > 0 && (
+                            <button
+                                onClick={handleClearFailedMessages}
+                                className="w-full py-2.5 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100"
+                            >
+                                Clear Failed Messages
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Category Management */}
@@ -311,11 +340,11 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between mb-3">
                         <h3 className="font-semibold flex items-center gap-2">
                             <Tag className="w-5 h-5 text-purple-600" />
-                            Customer Categories
+                            Categories
                         </h3>
                         <button
                             onClick={() => setShowAddCategory(true)}
-                            className="text-sm text-purple-600 font-medium hover:text-purple-700 flex items-center gap-1"
+                            className="text-sm text-purple-600 font-medium flex items-center gap-1"
                         >
                             <Plus className="w-4 h-4" />
                             Add
@@ -356,10 +385,10 @@ export default function SettingsPage() {
                                     value={newCategory}
                                     onChange={(e) => setNewCategory(e.target.value)}
                                     placeholder="e.g., Bikes"
-                                    className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    className="flex-1 px-3 py-2 border rounded-lg"
                                     autoFocus
                                 />
-                                <button onClick={handleAddCategory} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                                <button onClick={handleAddCategory} className="px-4 py-2 bg-purple-600 text-white rounded-lg">
                                     Add
                                 </button>
                                 <button onClick={() => setShowAddCategory(false)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
@@ -374,7 +403,7 @@ export default function SettingsPage() {
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Bell className="w-5 h-5 text-green-600" />
-                        Notifications (Admin ke liye)
+                        Notifications
                     </h3>
                     <div className="space-y-3">
                         <label className="flex items-center justify-between py-2">
@@ -405,18 +434,9 @@ export default function SettingsPage() {
                             />
                         </label>
                         <label className="flex items-center justify-between py-2">
-                            <span className="text-sm">Daily Summary</span>
-                            <input
-                                type="checkbox"
-                                checked={notifications.dailySummary}
-                                onChange={() => handleNotificationToggle("dailySummary")}
-                                className="w-5 h-5 text-blue-600 rounded"
-                            />
-                        </label>
-                        <label className="flex items-center justify-between py-2">
                             <div className="flex items-center gap-2">
                                 {notifications.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                                <span className="text-sm">Sound Enabled</span>
+                                <span className="text-sm">Sound</span>
                             </div>
                             <input
                                 type="checkbox"
@@ -428,7 +448,7 @@ export default function SettingsPage() {
 
                         <button
                             onClick={testNotification}
-                            className="w-full py-2.5 bg-green-50 text-green-600 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+                            className="w-full py-2.5 bg-green-50 text-green-600 rounded-lg text-sm font-medium hover:bg-green-100 flex items-center justify-center gap-2"
                         >
                             <BellRing className="w-4 h-4" />
                             Test Notification
@@ -436,40 +456,30 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
-                {/* Storage Optimization */}
+                {/* Storage */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <HardDrive className="w-5 h-5 text-orange-600" />
-                        Storage Optimization
+                        Storage
                     </h3>
 
                     <div className="space-y-3">
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">Used Space</span>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Used</span>
                             <span className="font-semibold">{storageInfo.sizePretty}</span>
                         </div>
-                        <div className="flex items-center justify-between text-sm">
+                        <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Customers</span>
                             <span className="font-semibold">{storageInfo.customers}</span>
                         </div>
-                        <div className="flex items-center justify-between text-sm">
+                        <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Payments</span>
                             <span className="font-semibold">{storageInfo.payments}</span>
                         </div>
 
-                        {storageInfo.canCleanup && (
-                            <button
-                                onClick={handleCleanupStorage}
-                                className="w-full py-2.5 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Sparkles className="w-4 h-4" />
-                                Clean Up Old Records
-                            </button>
-                        )}
-
                         <button
                             onClick={handleVacuum}
-                            className="w-full py-2.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors"
+                            className="w-full py-2.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100"
                         >
                             Optimize Database
                         </button>
@@ -485,21 +495,21 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                         <button
                             onClick={handleExportData}
-                            className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
+                            className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 flex items-center justify-center gap-2"
                         >
                             <Download className="w-4 h-4" />
                             Export Backup
                         </button>
                         <button
                             onClick={handleImportData}
-                            className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+                            className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 flex items-center justify-center gap-2"
                         >
                             <Upload className="w-4 h-4" />
                             Import Backup
                         </button>
                         <button
                             onClick={handleClearData}
-                            className="w-full py-3 bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                            className="w-full py-3 bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 flex items-center justify-center gap-2"
                         >
                             <Trash2 className="w-4 h-4" />
                             Clear All Data
@@ -516,11 +526,11 @@ export default function SettingsPage() {
                     <div className="space-y-2 text-sm text-gray-600">
                         <div className="flex justify-between py-2">
                             <span>Version</span>
-                            <span className="font-medium">1.0.0</span>
+                            <span className="font-medium">2.0.0</span>
                         </div>
                         <div className="flex justify-between py-2">
-                            <span>Storage Type</span>
-                            <span className="font-medium">IndexedDB (Ultra Optimized)</span>
+                            <span>Storage</span>
+                            <span className="font-medium">IndexedDB v2</span>
                         </div>
                     </div>
                 </div>

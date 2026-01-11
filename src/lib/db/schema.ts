@@ -1,103 +1,70 @@
-// src/lib/db/schema.ts - IndexedDB Schema Definition
+// src/lib/db/schema.ts - Enhanced IndexedDB Schema
 import Dexie, { Table } from 'dexie';
 import type { Customer, Payment, Profile } from '@/types';
 
-// ============================================
-// DATABASE CLASS
-// ============================================
+export interface WhatsAppQueue {
+    id?: number;
+    phone: string;
+    message: string;
+    customerId: number;
+    type: 'welcome' | 'payment' | 'reminder' | 'overdue' | 'completion';
+    attempts: number;
+    createdAt: string;
+    scheduledFor?: string;
+}
 
 export class MADatabase extends Dexie {
-    // Tables
     profiles!: Table<Profile, number>;
     customers!: Table<Customer, number>;
     payments!: Table<Payment, number>;
-
-    // Metadata table for app state
-    metadata!: Table<{
-        key: string;
-        value: any;
-        updatedAt: string;
-    }, string>;
+    whatsappQueue!: Table<WhatsAppQueue, number>;
+    metadata!: Table<{ key: string; value: any; updatedAt: string }, string>;
 
     constructor() {
         super('MAInstallmentDB');
 
-        // Schema version 1
-        this.version(1).stores({
+        // Version 2 - Added WhatsApp queue & better indexes
+        this.version(2).stores({
             profiles: 'id, name, createdAt',
-            customers: 'id, profileId, status, name, phone, lastPayment, [profileId+status]',
+            customers: 'id, profileId, status, [profileId+status], [status+lastPayment], [profileId+frequency]',
             payments: 'id, customerId, date, [customerId+date]',
+            whatsappQueue: '++id, customerId, scheduledFor, attempts',
             metadata: 'key, updatedAt',
+        }).upgrade(async tx => {
+            // Migration from v1 to v2
+            console.log('Upgrading to v2: Adding WhatsApp queue');
         });
 
-        // Hooks - Auto-update timestamps
         this.customers.hook('creating', (primKey, obj) => {
-            if (!obj.createdAt) {
-                obj.createdAt = new Date().toISOString();
-            }
+            if (!obj.createdAt) obj.createdAt = new Date().toISOString();
         });
 
         this.payments.hook('creating', (primKey, obj) => {
-            if (!obj.createdAt) {
-                obj.createdAt = new Date().toISOString();
-            }
+            if (!obj.createdAt) obj.createdAt = new Date().toISOString();
         });
 
         this.profiles.hook('creating', (primKey, obj) => {
-            if (!obj.createdAt) {
-                obj.createdAt = new Date().toISOString();
-            }
+            if (!obj.createdAt) obj.createdAt = new Date().toISOString();
         });
     }
 
-    // ============================================
-    // HELPER METHODS
-    // ============================================
-
-    /**
-     * Get customers by profile ID
-     */
+    // Query helpers
     async getCustomersByProfile(profileId: number): Promise<Customer[]> {
-        return this.customers
-            .where('profileId')
-            .equals(profileId)
-            .toArray();
+        return this.customers.where('profileId').equals(profileId).toArray();
     }
 
-    /**
-     * Get active customers by profile ID
-     */
     async getActiveCustomersByProfile(profileId: number): Promise<Customer[]> {
-        return this.customers
-            .where('[profileId+status]')
-            .equals([profileId, 'active'])
-            .toArray();
+        return this.customers.where('[profileId+status]').equals([profileId, 'active']).toArray();
     }
 
-    /**
-     * Get payments for a customer
-     */
     async getPaymentsByCustomer(customerId: number): Promise<Payment[]> {
-        return this.payments
-            .where('customerId')
-            .equals(customerId)
-            .reverse()
-            .sortBy('date');
+        return this.payments.where('customerId').equals(customerId).reverse().sortBy('date');
     }
 
-    /**
-     * Get payments for a date range
-     */
     async getPaymentsByDateRange(startDate: string, endDate: string): Promise<Payment[]> {
-        return this.payments
-            .where('date')
-            .between(startDate, endDate, true, true)
-            .toArray();
+        return this.payments.where('date').between(startDate, endDate, true, true).toArray();
     }
 
-    /**
-     * Get daily collection customers
-     */
     async getDailyCustomers(profileId: number): Promise<Customer[]> {
         return this.customers
             .where('[profileId+status]')
@@ -106,13 +73,10 @@ export class MADatabase extends Dexie {
             .toArray();
     }
 
-    /**
-     * Get overdue customers
-     */
     async getOverdueCustomers(profileId: number, days: number = 7): Promise<Customer[]> {
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - days);
-        const cutoffStr = cutoffDate.toISOString().split('T')[0];
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        const cutoffStr = cutoff.toISOString().split('T')[0];
 
         return this.customers
             .where('[profileId+status]')
@@ -121,87 +85,101 @@ export class MADatabase extends Dexie {
             .toArray();
     }
 
-    /**
-     * Search customers by name or phone
-     */
     async searchCustomers(profileId: number, query: string): Promise<Customer[]> {
         const lowerQuery = query.toLowerCase();
-
         return this.customers
             .where('profileId')
             .equals(profileId)
-            .filter(c =>
-                c.name.toLowerCase().includes(lowerQuery) ||
-                c.phone.includes(query)
-            )
+            .filter(c => c.name.toLowerCase().includes(lowerQuery) || c.phone.includes(query))
             .toArray();
     }
 
-    /**
-     * Get database size estimate
-     */
-    async getStorageSize(): Promise<number> {
-        const tables = await Promise.all([
-            this.profiles.count(),
-            this.customers.count(),
-            this.payments.count(),
-        ]);
-
-        // Rough estimate: avg 2KB per customer, 0.5KB per payment
-        return (tables[1] * 2 + tables[2] * 0.5) * 1024;
+    // WhatsApp queue management
+    async addToWhatsAppQueue(item: Omit<WhatsAppQueue, 'id' | 'attempts' | 'createdAt'>): Promise<number> {
+        return this.whatsappQueue.add({
+            ...item,
+            attempts: 0,
+            createdAt: new Date().toISOString(),
+        });
     }
 
-    /**
-     * Clear all data (for reset)
-     */
+    async getWhatsAppQueue(): Promise<WhatsAppQueue[]> {
+        return this.whatsappQueue.where('attempts').below(3).toArray();
+    }
+
+    async removeFromWhatsAppQueue(id: number): Promise<void> {
+        await this.whatsappQueue.delete(id);
+    }
+
+    async incrementQueueAttempts(id: number): Promise<void> {
+        const item = await this.whatsappQueue.get(id);
+        if (item) {
+            await this.whatsappQueue.update(id, { attempts: item.attempts + 1 });
+        }
+    }
+
+    // Storage size estimation
+    async getStorageSize(): Promise<number> {
+        const [customers, payments] = await Promise.all([
+            this.customers.toArray(),
+            this.payments.toArray(),
+        ]);
+
+        // Calculate actual size
+        const customersSize = new Blob([JSON.stringify(customers)]).size;
+        const paymentsSize = new Blob([JSON.stringify(payments)]).size;
+
+        return customersSize + paymentsSize;
+    }
+
+    // Cleanup
     async clearAll(): Promise<void> {
-        await this.transaction('rw', this.profiles, this.customers, this.payments, this.metadata, async () => {
+        await this.transaction('rw', [this.profiles, this.customers, this.payments, this.whatsappQueue, this.metadata], async () => {
             await this.profiles.clear();
             await this.customers.clear();
             await this.payments.clear();
+            await this.whatsappQueue.clear();
             await this.metadata.clear();
         });
     }
 
-    /**
-     * Export all data
-     */
+    // Export/Import
     async exportAll() {
-        const [profiles, customers, payments, metadata] = await Promise.all([
+        const [profiles, customers, payments, metadata, queue] = await Promise.all([
             this.profiles.toArray(),
             this.customers.toArray(),
             this.payments.toArray(),
             this.metadata.toArray(),
+            this.whatsappQueue.toArray(),
         ]);
 
         return {
-            version: '1.0.0',
+            version: '2.0.0',
             exportDate: new Date().toISOString(),
             profiles,
             customers,
             payments,
+            whatsappQueue: queue,
             metadata: metadata.reduce((acc, m) => ({ ...acc, [m.key]: m.value }), {}),
         };
     }
 
-    /**
-     * Import data (with validation)
-     */
     async importAll(data: any): Promise<boolean> {
         try {
-            // Validate structure
             if (!data.version || !data.profiles || !data.customers || !data.payments) {
                 throw new Error('Invalid backup format');
             }
 
-            // Clear existing data
             await this.clearAll();
 
-            // Import in transaction
-            await this.transaction('rw', this.profiles, this.customers, this.payments, this.metadata, async () => {
+            await this.transaction('rw', this.profiles, this.customers, this.payments, this.whatsappQueue, this.metadata, async () => {
                 await this.profiles.bulkAdd(data.profiles);
                 await this.customers.bulkAdd(data.customers);
                 await this.payments.bulkAdd(data.payments);
+
+                if (data.whatsappQueue) {
+                    await this.whatsappQueue.bulkAdd(data.whatsappQueue);
+                }
 
                 if (data.metadata) {
                     const metadataEntries = Object.entries(data.metadata).map(([key, value]) => ({
@@ -220,30 +198,16 @@ export class MADatabase extends Dexie {
         }
     }
 
-    /**
-     * Cleanup old data
-     */
     async cleanup(): Promise<number> {
-        // Keep only last 100 completed customers
-        const completed = await this.customers
-            .where('status')
-            .equals('completed')
-            .reverse()
-            .sortBy('lastPayment');
+        const completed = await this.customers.where('status').equals('completed').reverse().sortBy('lastPayment');
 
         if (completed.length > 100) {
             const toDelete = completed.slice(100);
             const customerIds = toDelete.map(c => c.id);
 
             await this.transaction('rw', this.customers, this.payments, async () => {
-                // Delete old customers
                 await this.customers.bulkDelete(customerIds);
-
-                // Delete their payments
-                await this.payments
-                    .where('customerId')
-                    .anyOf(customerIds)
-                    .delete();
+                await this.payments.where('customerId').anyOf(customerIds).delete();
             });
 
             return toDelete.length;
@@ -252,17 +216,11 @@ export class MADatabase extends Dexie {
         return 0;
     }
 
-    /**
-     * Get metadata value
-     */
     async getMeta<T>(key: string, defaultValue?: T): Promise<T | undefined> {
         const item = await this.metadata.get(key);
         return item ? item.value : defaultValue;
     }
 
-    /**
-     * Set metadata value
-     */
     async setMeta(key: string, value: any): Promise<void> {
         await this.metadata.put({
             key,
@@ -272,14 +230,9 @@ export class MADatabase extends Dexie {
     }
 }
 
-// ============================================
-// EXPORT SINGLETON INSTANCE
-// ============================================
-
 export const db = new MADatabase();
 
-// Enable for debugging
 if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     (window as any).db = db;
-    console.log('💾 IndexedDB initialized:', db.name);
+    console.log('💾 IndexedDB v2 initialized:', db.name);
 }

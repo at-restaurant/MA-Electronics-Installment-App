@@ -1,3 +1,5 @@
+// src/types/index.ts - Updated Types with Multiple Images
+
 export interface Profile {
     id: number;
     name: string;
@@ -6,14 +8,13 @@ export interface Profile {
     createdAt: string;
 }
 
-// ✅ NEW: Guarantor/Reference Type
 export interface Guarantor {
     id: number;
     name: string;
     phone: string;
     cnic: string;
-    photo: string | null;
-    relation?: string; // e.g., "Brother", "Friend"
+    photos: string[]; // Multiple photos
+    relation?: string;
 }
 
 export interface Customer {
@@ -24,7 +25,7 @@ export interface Customer {
     address: string;
     cnic: string;
     photo: string | null;
-    cnicPhoto: string | null;  // ✅ NEW: CNIC image
+    cnicPhotos: string[]; // Multiple CNIC images
     document: string | null;
     totalAmount: number;
     installmentAmount: number;
@@ -36,9 +37,8 @@ export interface Customer {
     lastPayment: string;
     status: 'active' | 'completed';
     createdAt: string;
-
-    autoMessaging: boolean;     // ✅ NEW: Auto WhatsApp toggle
-    guarantors: Guarantor[];    // ✅ NEW: References
+    autoMessaging: boolean;
+    guarantors: Guarantor[];
     category?: string;
     tags?: string[];
     autoSchedule?: boolean;
@@ -79,9 +79,4 @@ export interface Statistics {
     completedCustomers: number;
     overdueCustomers: number;
     collectionRate: number;
-    byCategory?: Record<string, {
-        customers: number;
-        totalAmount: number;
-        paidAmount: number;
-    }>;
 }

@@ -1,28 +1,36 @@
-// src/lib/notificationManager.ts - FIXED with complete default values
-
-import { Storage } from './storage';
+// src/lib/notificationManager.ts - FIXED
+import { db } from './db';
 import { formatCurrency, calculateDaysOverdue } from './utils';
 import type { Customer, NotificationSettings } from '@/types';
 
 export class NotificationManager {
     private static instance: NotificationManager;
     private permission: NotificationPermission = 'default';
-    private settings: NotificationSettings;
+    private settings: NotificationSettings = {
+        enableNotifications: true,
+        paymentReminders: true,
+        overdueAlerts: true,
+        dailySummary: false,
+        reminderTime: '09:00',
+        soundEnabled: true,
+    };
 
     private constructor() {
-        // ✅ FIX: Complete default values matching NotificationSettings type
-        this.settings = Storage.get<NotificationSettings>('notifications', {
+        this.loadSettings();
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+            this.permission = Notification.permission;
+        }
+    }
+
+    private async loadSettings() {
+        this.settings = await db.getMeta<NotificationSettings>('notifications', {
             enableNotifications: true,
             paymentReminders: true,
             overdueAlerts: true,
             dailySummary: false,
-            reminderTime: '09:00',      // ✅ ADDED
-            soundEnabled: true,         // ✅ ADDED
+            reminderTime: '09:00',
+            soundEnabled: true,
         });
-
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-            this.permission = Notification.permission;
-        }
     }
 
     static getInstance(): NotificationManager {
@@ -34,7 +42,6 @@ export class NotificationManager {
 
     async requestPermission(): Promise<boolean> {
         if (typeof window === 'undefined' || !('Notification' in window)) {
-            console.warn('Notifications not supported');
             return false;
         }
 
@@ -50,9 +57,9 @@ export class NotificationManager {
         return false;
     }
 
-    updateSettings(settings: NotificationSettings): void {
+    async updateSettings(settings: NotificationSettings): Promise<void> {
         this.settings = settings;
-        Storage.save('notifications', settings);
+        await db.setMeta('notifications', settings);
     }
 
     getSettings(): NotificationSettings {
@@ -69,9 +76,7 @@ export class NotificationManager {
     }
 
     async sendNotification(title: string, options?: NotificationOptions): Promise<void> {
-        if (!this.canSendNotification()) {
-            return;
-        }
+        if (!this.canSendNotification()) return;
 
         try {
             const notification = new Notification(title, {
@@ -92,7 +97,7 @@ export class NotificationManager {
     async checkDailyReminders(): Promise<void> {
         if (!this.settings.paymentReminders) return;
 
-        const customers = Storage.get<Customer[]>('customers', []);
+        const customers = await db.customers.toArray();
         const today = new Date().toISOString().split('T')[0];
 
         for (const customer of customers) {
@@ -116,7 +121,7 @@ export class NotificationManager {
     async checkOverdueAlerts(): Promise<void> {
         if (!this.settings.overdueAlerts) return;
 
-        const customers = Storage.get<Customer[]>('customers', []);
+        const customers = await db.customers.toArray();
 
         for (const customer of customers) {
             if (customer.status === 'completed') continue;
@@ -139,13 +144,13 @@ export class NotificationManager {
     async sendDailySummary(): Promise<void> {
         if (!this.settings.dailySummary) return;
 
-        const customers = Storage.get<Customer[]>('customers', []);
-        const payments = Storage.get('payments', []);
+        const customers = await db.customers.toArray();
+        const payments = await db.payments.toArray();
 
         const today = new Date().toISOString().split('T')[0];
-        const todayPayments = payments.filter((p: any) => p.date === today);
+        const todayPayments = payments.filter((p) => p.date === today);
 
-        const totalCollected = todayPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
+        const totalCollected = todayPayments.reduce((sum, p) => sum + p.amount, 0);
         const activeCustomers = customers.filter(c => c.status === 'active').length;
 
         await this.sendNotification(
@@ -161,17 +166,14 @@ export class NotificationManager {
     async scheduleDailyChecks(): Promise<void> {
         if (typeof window === 'undefined') return;
 
-        // Check reminders every hour
         setInterval(() => {
             this.checkDailyReminders();
         }, 60 * 60 * 1000);
 
-        // Check overdue alerts twice daily
         setInterval(() => {
             this.checkOverdueAlerts();
         }, 12 * 60 * 60 * 1000);
 
-        // Send daily summary at 8 PM
         const now = new Date();
         const summaryTime = new Date();
         summaryTime.setHours(20, 0, 0, 0);
@@ -206,17 +208,6 @@ export class NotificationManager {
             {
                 body: `${customerName} has completed all payments!`,
                 tag: 'payment-completed',
-                requireInteraction: true,
-            }
-        );
-    }
-
-    async notifyLowStorage(): Promise<void> {
-        await this.sendNotification(
-            '⚠️ Storage Warning',
-            {
-                body: 'Your app storage is running low. Consider cleaning up old records.',
-                tag: 'storage-warning',
                 requireInteraction: true,
             }
         );
