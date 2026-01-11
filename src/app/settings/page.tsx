@@ -1,25 +1,45 @@
-// src/app/settings/page.tsx - FIXED with WhatsApp Queue Status
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-    Bell, Smartphone, Info, Trash2, Download, Upload, Briefcase,
-    Plus, X, Tag, HardDrive, Sparkles, Volume2, VolumeX, BellRing, MessageSquare
-} from "lucide-react";
-import Navigation from "@/components/Navigation";
-import GlobalHeader from "@/components/GlobalHeader";
-import ProfileManager from "@/components/ProfileManager";
-import { db } from "@/lib/db";
-import { useProfile } from "@/hooks/useCompact";
-import { NotificationService } from "@/lib/notificationSound";
-import { WhatsAppQueueService } from "@/lib/whatsappQueue";
-import type { NotificationSettings } from "@/types";
+    Bell,
+    Smartphone,
+    Info,
+    Trash2,
+    Download,
+    Upload,
+    Briefcase,
+    Plus,
+    X,
+    Tag,
+    HardDrive,
+    Volume2,
+    VolumeX,
+    BellRing,
+    MessageSquare,
+} from 'lucide-react';
+import Navigation from '@/components/Navigation';
+import GlobalHeader from '@/components/GlobalHeader';
+import ProfileManager from '@/components/ProfileManager';
+import { db } from '@/lib/db';
+import { useProfile } from '@/hooks/useCompact';
+import { WhatsAppQueueService } from '@/lib/whatsappQueue';
+import type { NotificationSettings, WhatsAppQueue } from '@/types';
 
 interface AppSettings {
     categories: string[];
     defaultCategory: string;
 }
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+    enableNotifications: true,
+    paymentReminders:  true,
+    overdueAlerts: true,
+    dailySummary: false,
+    reminderTime: '09:00',
+    soundEnabled: true,
+};
 
 export default function SettingsPage() {
     const router = useRouter();
@@ -28,14 +48,9 @@ export default function SettingsPage() {
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
     const [isInstallable, setIsInstallable] = useState(false);
 
-    const [notifications, setNotifications] = useState<NotificationSettings>({
-        enableNotifications: true,
-        paymentReminders: true,
-        overdueAlerts: true,
-        dailySummary: false,
-        reminderTime: '09:00',
-        soundEnabled: true,
-    });
+    const [notifications, setNotifications] = useState<NotificationSettings>(
+        DEFAULT_NOTIFICATION_SETTINGS
+    );
 
     const [storageInfo, setStorageInfo] = useState({
         sizePretty: '0 KB',
@@ -43,7 +58,10 @@ export default function SettingsPage() {
         payments: 0,
     });
 
-    const [whatsappQueue, setWhatsappQueue] = useState({ count: 0, items: [] });
+    const [whatsappQueue, setWhatsappQueue] = useState<{ count: number; items: WhatsAppQueue[] }>({
+        count: 0,
+        items: [],
+    });
 
     const [appSettings, setAppSettings] = useState<AppSettings>({
         categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
@@ -61,7 +79,8 @@ export default function SettingsPage() {
     }, []);
 
     const setupInstallPrompt = () => {
-        window.addEventListener('beforeinstallprompt', (e) => {
+        if (typeof window === 'undefined') return;
+        window.addEventListener('beforeinstallprompt', (e:  any) => {
             e.preventDefault();
             setDeferredPrompt(e);
             setIsInstallable(true);
@@ -78,7 +97,7 @@ export default function SettingsPage() {
         const { outcome } = await deferredPrompt.userChoice;
 
         if (outcome === 'accepted') {
-            alert('✅ App installing!');
+            alert('✅ App installing! ');
         }
 
         setDeferredPrompt(null);
@@ -86,22 +105,24 @@ export default function SettingsPage() {
     };
 
     const loadSettings = async () => {
-        const savedNotifications = await db.getMeta<NotificationSettings>('notifications', {
-            enableNotifications: true,
-            paymentReminders: true,
-            overdueAlerts: true,
-            dailySummary: false,
-            reminderTime: '09:00',
-            soundEnabled: true,
-        });
+        const savedNotifications = await db.getMeta<NotificationSettings>(
+            'notifications',
+            DEFAULT_NOTIFICATION_SETTINGS
+        );
 
-        setNotifications(savedNotifications);
+        setNotifications(savedNotifications ??  DEFAULT_NOTIFICATION_SETTINGS);
 
         const savedAppSettings = await db.getMeta<AppSettings>('app_settings', {
             categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
             defaultCategory: 'Electronics',
         });
-        setAppSettings(savedAppSettings);
+
+        setAppSettings(
+            savedAppSettings ??  {
+                categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
+                defaultCategory:  'Electronics',
+            }
+        );
     };
 
     const updateStorageInfo = async () => {
@@ -111,12 +132,11 @@ export default function SettingsPage() {
             db.getStorageSize(),
         ]);
 
-        const sizeKB = Math.round(size / 1024);
         const sizeMB = (size / (1024 * 1024)).toFixed(2);
 
         setStorageInfo({
             customers: customerCount,
-            payments: paymentCount,
+            payments:  paymentCount,
             sizePretty: sizeMB + ' MB',
         });
     };
@@ -127,35 +147,36 @@ export default function SettingsPage() {
     };
 
     const handleNotificationToggle = async (key: keyof NotificationSettings) => {
-        const updated = { ...notifications, [key]: !notifications[key] };
+        const updated = { ...notifications, [key]:  !notifications[key] };
         setNotifications(updated);
-        await db.setMeta("notifications", updated);
-
-        if (key === 'enableNotifications' && updated.enableNotifications) {
-            await NotificationService.requestPermission();
-        }
+        await db.setMeta('notifications', updated);
     };
 
     const testNotification = async () => {
-        if (!notifications.enableNotifications) {
+        if (! notifications.enableNotifications) {
             alert('Enable notifications first');
             return;
         }
 
-        const granted = await NotificationService.requestPermission();
-        if (granted) {
-            await NotificationService.send(
-                'Test Notification 🔔',
-                'Notifications working!',
-                { sound: 'notification' }
-            );
-        } else {
-            alert('⚠️ Notifications blocked. Enable in browser settings.');
+        try {
+            if (typeof window !== 'undefined' && 'Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    new Notification('MA Electronics', {
+                        body: 'Test notification successful! ',
+                        icon: '/icon-192x192.png',
+                    });
+                } else {
+                    alert('⚠️ Notifications blocked.  Enable in browser settings.');
+                }
+            }
+        } catch (error) {
+            console.error('Notification test failed:', error);
         }
     };
 
     const handleAddCategory = async () => {
-        if (!newCategory.trim() || appSettings.categories.includes(newCategory.trim())) {
+        if (!newCategory.trim() || appSettings.categories.includes(newCategory. trim())) {
             alert(newCategory.trim() ? 'Category exists' : 'Enter name');
             return;
         }
@@ -176,10 +197,11 @@ export default function SettingsPage() {
 
         const updated = {
             ...appSettings,
-            categories: appSettings.categories.filter(c => c !== category),
-            defaultCategory: appSettings.defaultCategory === category
-                ? appSettings.categories.find(c => c !== category) || 'Other'
-                : appSettings.defaultCategory,
+            categories: appSettings.categories.filter((c) => c !== category),
+            defaultCategory:
+                appSettings.defaultCategory === category
+                    ? appSettings.categories. find((c) => c !== category) || 'Other'
+                    : appSettings.defaultCategory,
         };
 
         setAppSettings(updated);
@@ -195,7 +217,7 @@ export default function SettingsPage() {
     const handleProcessWhatsAppQueue = async () => {
         await WhatsAppQueueService.processQueue();
         await loadWhatsAppQueue();
-        alert('✅ Queue processed!');
+        alert('✅ Queue processed! ');
     };
 
     const handleClearFailedMessages = async () => {
@@ -205,34 +227,34 @@ export default function SettingsPage() {
     };
 
     const handleVacuum = async () => {
-        if (!confirm('Optimize database?')) return;
+        if (! confirm('Optimize database?')) return;
 
         const [customers, payments] = await Promise.all([
             db.customers.toArray(),
-            db.payments.toArray(),
+            db.payments. toArray(),
         ]);
 
         await db.transaction('rw', [db.customers, db.payments], async () => {
-            await db.customers.clear();
-            await db.payments.clear();
+            await db. customers.clear();
+            await db.payments. clear();
             await db.customers.bulkAdd(customers);
             await db.payments.bulkAdd(payments);
         });
 
         await updateStorageInfo();
-        alert('✅ Database optimized!');
+        alert('✅ Database optimized! ');
     };
 
     const handleExportData = async () => {
         const data = await db.exportAll();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
+        const a = document.createElement('a');
         a.href = url;
-        a.download = `ma-backup-${new Date().toISOString().split("T")[0]}.json`;
+        a.download = `ma-backup-${new Date().toISOString().split('T')[0]}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        alert("✅ Data exported!");
+        alert('✅ Data exported!');
     };
 
     const handleImportData = () => {
@@ -249,13 +271,13 @@ export default function SettingsPage() {
                 const success = await db.importAll(JSON.parse(text));
 
                 if (success) {
-                    alert("✅ Data imported!");
+                    alert('✅ Data imported! ');
                     window.location.reload();
                 } else {
-                    alert("❌ Import failed!");
+                    alert('❌ Import failed! ');
                 }
             } catch {
-                alert("❌ Invalid backup file!");
+                alert('❌ Invalid backup file! ');
             }
         };
 
@@ -263,12 +285,12 @@ export default function SettingsPage() {
     };
 
     const handleClearData = async () => {
-        if (!confirm("Delete ALL data? Cannot be undone!")) return;
-        if (!confirm("Last warning! PERMANENT action!")) return;
+        if (! confirm('Delete ALL data?  Cannot be undone! ')) return;
+        if (! confirm('Last warning!  PERMANENT action! ')) return;
 
-        await db.clearAll();
-        alert("All data cleared");
-        router.push("/");
+        await db. clearAll();
+        alert('All data cleared');
+        router.push('/');
     };
 
     return (
@@ -276,6 +298,7 @@ export default function SettingsPage() {
             <GlobalHeader title="Settings" />
 
             <div className="pt-16 p-4 space-y-4">
+                {/* Install App */}
                 {isInstallable && (
                     <div className="bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl p-4 text-white shadow-lg">
                         <div className="flex items-center justify-between">
@@ -284,9 +307,7 @@ export default function SettingsPage() {
                                     <Smartphone className="w-5 h-5" />
                                     Install App
                                 </h3>
-                                <p className="text-sm opacity-90">
-                                    Install for offline use
-                                </p>
+                                <p className="text-sm opacity-90">Install for offline use</p>
                             </div>
                             <button
                                 onClick={handleInstallClick}
@@ -298,6 +319,7 @@ export default function SettingsPage() {
                     </div>
                 )}
 
+                {/* Profile Management */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                         <Briefcase className="w-5 h-5 text-blue-600" />
@@ -320,7 +342,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                         <button
                             onClick={handleProcessWhatsAppQueue}
-                            className="w-full py-2.5 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100"
+                            className="w-full py-2. 5 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100"
                         >
                             Process Queue Now
                         </button>
@@ -352,7 +374,7 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-2">
-                        {appSettings.categories.map(category => (
+                        {appSettings.categories.map((category) => (
                             <div key={category} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                 <div className="flex items-center gap-2">
                                     <input
@@ -368,7 +390,7 @@ export default function SettingsPage() {
                                 </div>
                                 <button
                                     onClick={() => handleDeleteCategory(category)}
-                                    className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                    className="p-1 text-red-500 hover:bg-red-50 rounded disabled:opacity-50"
                                     disabled={appSettings.categories.length <= 1}
                                 >
                                     <Trash2 className="w-4 h-4" />
@@ -385,13 +407,19 @@ export default function SettingsPage() {
                                     value={newCategory}
                                     onChange={(e) => setNewCategory(e.target.value)}
                                     placeholder="e.g., Bikes"
-                                    className="flex-1 px-3 py-2 border rounded-lg"
+                                    className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                                     autoFocus
                                 />
-                                <button onClick={handleAddCategory} className="px-4 py-2 bg-purple-600 text-white rounded-lg">
+                                <button
+                                    onClick={handleAddCategory}
+                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+                                >
                                     Add
                                 </button>
-                                <button onClick={() => setShowAddCategory(false)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                                <button
+                                    onClick={() => setShowAddCategory(false)}
+                                    className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                                >
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
@@ -402,53 +430,57 @@ export default function SettingsPage() {
                 {/* Notifications */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <Bell className="w-5 h-5 text-green-600" />
+                        <Bell className="w-5 h-5 text-blue-600" />
                         Notifications
                     </h3>
                     <div className="space-y-3">
-                        <label className="flex items-center justify-between py-2">
-                            <span className="text-sm">Enable Notifications</span>
+                        <label className="flex items-center justify-between py-2 cursor-pointer">
+                            <span className="text-sm font-medium">Enable Notifications</span>
                             <input
                                 type="checkbox"
                                 checked={notifications.enableNotifications}
-                                onChange={() => handleNotificationToggle("enableNotifications")}
-                                className="w-5 h-5 text-blue-600 rounded"
+                                onChange={() => handleNotificationToggle('enableNotifications')}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer"
                             />
                         </label>
-                        <label className="flex items-center justify-between py-2">
-                            <span className="text-sm">Payment Reminders</span>
+                        <label className="flex items-center justify-between py-2 cursor-pointer">
+                            <span className="text-sm font-medium">Payment Reminders</span>
                             <input
                                 type="checkbox"
                                 checked={notifications.paymentReminders}
-                                onChange={() => handleNotificationToggle("paymentReminders")}
-                                className="w-5 h-5 text-blue-600 rounded"
+                                onChange={() => handleNotificationToggle('paymentReminders')}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer"
                             />
                         </label>
-                        <label className="flex items-center justify-between py-2">
-                            <span className="text-sm">Overdue Alerts</span>
+                        <label className="flex items-center justify-between py-2 cursor-pointer">
+                            <span className="text-sm font-medium">Overdue Alerts</span>
                             <input
                                 type="checkbox"
                                 checked={notifications.overdueAlerts}
-                                onChange={() => handleNotificationToggle("overdueAlerts")}
-                                className="w-5 h-5 text-blue-600 rounded"
+                                onChange={() => handleNotificationToggle('overdueAlerts')}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer"
                             />
                         </label>
-                        <label className="flex items-center justify-between py-2">
+                        <label className="flex items-center justify-between py-2 cursor-pointer">
                             <div className="flex items-center gap-2">
-                                {notifications.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                                <span className="text-sm">Sound</span>
+                                {notifications.soundEnabled ? (
+                                    <Volume2 className="w-4 h-4" />
+                                ) : (
+                                    <VolumeX className="w-4 h-4" />
+                                )}
+                                <span className="text-sm font-medium">Sound</span>
                             </div>
                             <input
                                 type="checkbox"
                                 checked={notifications.soundEnabled}
-                                onChange={() => handleNotificationToggle("soundEnabled")}
-                                className="w-5 h-5 text-blue-600 rounded"
+                                onChange={() => handleNotificationToggle('soundEnabled')}
+                                className="w-5 h-5 text-blue-600 rounded cursor-pointer"
                             />
                         </label>
 
                         <button
                             onClick={testNotification}
-                            className="w-full py-2.5 bg-green-50 text-green-600 rounded-lg text-sm font-medium hover:bg-green-100 flex items-center justify-center gap-2"
+                            className="w-full py-2. 5 bg-green-50 text-green-600 rounded-lg text-sm font-medium hover:bg-green-100 flex items-center justify-center gap-2 mt-3"
                         >
                             <BellRing className="w-4 h-4" />
                             Test Notification
@@ -531,6 +563,10 @@ export default function SettingsPage() {
                         <div className="flex justify-between py-2">
                             <span>Storage</span>
                             <span className="font-medium">IndexedDB v2</span>
+                        </div>
+                        <div className="flex justify-between py-2">
+                            <span>App Type</span>
+                            <span className="font-medium">Progressive Web App</span>
                         </div>
                     </div>
                 </div>

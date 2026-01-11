@@ -1,173 +1,173 @@
-// src/app/pending/page.tsx - WITH GLOBAL HEADER + COMPACT HOOKS
+'use client';
 
-"use client";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { AlertCircle, Phone, MapPin } from 'lucide-react';
+import Navigation from '@/components/Navigation';
+import GlobalHeader from '@/components/GlobalHeader';
+import { db } from '@/lib/db';
+import { useProfile } from '@/hooks/useCompact';
+import { formatCurrency, formatDate, calculateDaysOverdue } from '@/lib/utils';
+import type { Customer } from '@/types';
 
-import { AlertCircle, Clock, MessageSquare } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
-import CustomerCard from "@/components/CustomerCard";
-import Navigation from "@/components/Navigation";
-import GlobalHeader from "@/components/GlobalHeader";
-import FilterBar from "@/components/FilterBar";
-import { useProfile, useCompactCustomers } from "@/hooks/useCompact";
-import { WhatsAppService } from "@/lib/whatsapp";
-import { formatCurrency, calculateDaysOverdue } from "@/lib/utils";
-import type { Customer } from "@/types";
-
-interface PendingCustomer extends Customer {
-    daysOverdue: number;
-    remaining: number;
-}
+type OverdueType = 'overdue_7' | 'overdue_14' | 'overdue_30' | 'overdue_30_plus';
 
 export default function PendingPage() {
     const router = useRouter();
     const { profile } = useProfile();
-    const { customers } = useCompactCustomers(profile?.id);
-    const [filter, setFilter] = useState("all");
-    const [searchQuery, setSearchQuery] = useState("");
+    const [pending, setPending] = useState<Customer[]>([]);
+    const [filtered, setFiltered] = useState<Customer[]>([]);
+    const [filter, setFilter] = useState<OverdueType | 'all'>('all');
 
-    // Calculate pending customers
-    const pendingCustomers: PendingCustomer[] = customers
-        .filter(c => c.paidAmount < c.totalAmount)
-        .map(c => ({
-            ...c,
-            daysOverdue: calculateDaysOverdue(c.lastPayment),
-            remaining: c.totalAmount - c.paidAmount,
-        }))
-        .sort((a, b) => b.daysOverdue - a.daysOverdue);
+    useEffect(() => {
+        if (profile) loadPending();
+    }, [profile]);
 
-    // Filter customers
-    const filteredCustomers = pendingCustomers.filter(customer => {
-        // Search filter
-        const matchesSearch =
-            customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            customer.phone.includes(searchQuery);
+    useEffect(() => {
+        applyFilter();
+    }, [pending, filter]);
 
-        // Status filter
-        const matchesFilter =
-            filter === "all" ||
-            (filter === "overdue" && customer.daysOverdue > 7) ||
-            (filter === "warning" && customer.daysOverdue > 3 && customer.daysOverdue <= 7) ||
-            (filter === "active" && customer.daysOverdue <= 3);
+    const loadPending = async () => {
+        const active = await db.getActiveCustomersByProfile(profile! .id);
+        const overdue = active.filter((c) => calculateDaysOverdue(c.lastPayment) > 0);
+        setPending(overdue. sort((a, b) => calculateDaysOverdue(b.lastPayment) - calculateDaysOverdue(a.lastPayment)));
+    };
 
-        return matchesSearch && matchesFilter;
-    });
+    const applyFilter = () => {
+        if (filter === 'all') {
+            setFiltered(pending);
+        } else {
+            const days = {
+                overdue_7: 7,
+                overdue_14: 14,
+                overdue_30: 30,
+                overdue_30_plus:  Infinity,
+            };
+            const minDays = filter === 'overdue_30_plus' ? 31 : Object.values(days)[Object.keys(days).indexOf(filter)];
+            const maxDays = filter === 'overdue_30_plus' ?  Infinity : minDays;
 
-    // Stats
-    const totalPending = pendingCustomers.reduce((sum, c) => sum + c.remaining, 0);
-    const overdueCount = pendingCustomers.filter(c => c.daysOverdue > 7).length;
-    const warningCount = pendingCustomers.filter(c => c.daysOverdue > 3 && c.daysOverdue <= 7).length;
-    const activeCount = pendingCustomers.filter(c => c.daysOverdue <= 3).length;
-
-    // Filter options for FilterBar
-    const filterOptions = [
-        { id: "all", label: "All", count: pendingCustomers.length },
-        { id: "overdue", label: "Overdue", count: overdueCount, color: "bg-red-600 text-white" },
-        { id: "warning", label: "Warning", count: warningCount, color: "bg-orange-600 text-white" },
-        { id: "active", label: "Active", count: activeCount, color: "bg-blue-600 text-white" },
-    ];
-
-    const handleAction = (customer: Customer, action: string) => {
-        if (action === "view") {
-            router.push(`/customers/${customer.id}`);
-        } else if (action === "whatsapp") {
-            const daysOverdue = calculateDaysOverdue(customer.lastPayment);
-            if (daysOverdue > 7) {
-                WhatsAppService.sendOverdueAlert(customer, daysOverdue);
-            } else {
-                WhatsAppService.sendPaymentReminder(customer);
-            }
+            setFiltered(
+                pending.filter((c) => {
+                    const d = calculateDaysOverdue(c.lastPayment);
+                    return filter === 'overdue_7' ? d <= 7 :
+                        filter === 'overdue_14' ? d > 7 && d <= 14 :
+                            filter === 'overdue_30' ? d > 14 && d <= 30 :  d > 30;
+                })
+            );
         }
+    };
+
+    const getColor = (days: number) => {
+        if (days <= 7) return 'border-orange-300 bg-orange-50';
+        if (days <= 14) return 'border-red-300 bg-red-50';
+        if (days <= 30) return 'border-red-400 bg-red-100';
+        return 'border-red-500 bg-red-200';
+    };
+
+    const getIcon = (days: number) => {
+        if (days <= 7) return '⚠️';
+        if (days <= 14) return '🔴';
+        if (days <= 30) return '🔴🔴';
+        return '🚨';
     };
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
             <GlobalHeader title="Pending Payments" />
 
-            <div className="pt-16 p-4 space-y-4">
-                {/* Summary Stats */}
-                <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                        <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-2" />
-                        <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
-                        <p className="text-xs text-gray-600">Overdue</p>
+            <div className="pt-16 p-4 max-w-2xl mx-auto">
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-white rounded p-3 shadow-sm text-center">
+                        <p className="text-xs text-gray-600">Total Pending</p>
+                        <p className="text-2xl font-bold text-red-600">{pending.length}</p>
                     </div>
-
-                    <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                        <Clock className="w-6 h-6 text-orange-500 mx-auto mb-2" />
-                        <p className="text-2xl font-bold text-orange-600">{warningCount}</p>
-                        <p className="text-xs text-gray-600">Warning</p>
-                    </div>
-
-                    <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                        <MessageSquare className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-                        <p className="text-2xl font-bold text-blue-600">{pendingCustomers.length}</p>
-                        <p className="text-xs text-gray-600">Total</p>
-                    </div>
-                </div>
-
-                {/* Total Pending Card */}
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white shadow-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                        <AlertCircle className="w-6 h-6" />
-                        <p className="text-sm opacity-90">Total Pending Amount</p>
-                    </div>
-                    <p className="text-3xl font-bold mb-2">{formatCurrency(totalPending)}</p>
-                    <p className="text-sm opacity-75">
-                        From {pendingCustomers.length} customer{pendingCustomers.length !== 1 ? 's' : ''}
-                    </p>
-                </div>
-
-                {/* Filter Bar */}
-                <FilterBar
-                    searchPlaceholder="Search pending customers..."
-                    searchValue={searchQuery}
-                    onSearchChange={setSearchQuery}
-                    filters={filterOptions}
-                    activeFilter={filter}
-                    onFilterChange={setFilter}
-                />
-
-                {/* Customer List */}
-                <div className="space-y-3">
-                    {filteredCustomers.length === 0 ? (
-                        <div className="bg-white rounded-2xl p-12 text-center">
-                            <Clock className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                            <p className="text-gray-600 mb-2 font-medium">
-                                {searchQuery
-                                    ? "No customers found"
-                                    : filter === "all"
-                                        ? "No pending payments!"
-                                        : `No ${filter} payments`
-                                }
-                            </p>
-                            {!searchQuery && filter === "all" && (
-                                <p className="text-sm text-gray-400">
-                                    All customers are up to date! 🎉
-                                </p>
-                            )}
-                        </div>
-                    ) : (
-                        filteredCustomers.map(customer => (
-                            <CustomerCard
-                                key={customer.id}
-                                customer={customer}
-                                onClick={() => router.push(`/customers/${customer.id}`)}
-                                variant="detailed"
-                                showActions={true}
-                                onActionClick={handleAction}
-                            />
-                        ))
-                    )}
-                </div>
-
-                {/* Info Box */}
-                {filteredCustomers.length > 0 && (
-                    <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-                        <p className="text-sm text-amber-800">
-                            <strong>💡 Tip:</strong> Send WhatsApp reminders to customers who are late.
-                            Regular messages help maintain payment discipline.
+                    <div className="bg-white rounded p-3 shadow-sm text-center">
+                        <p className="text-xs text-gray-600">Total Overdue</p>
+                        <p className="text-2xl font-bold text-red-600">
+                            {formatCurrency(pending.reduce((sum, c) => sum + (c.totalAmount - c.paidAmount), 0))}
                         </p>
+                    </div>
+                </div>
+
+                {/* Filter Buttons */}
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                    {[
+                        { label: 'All', value: 'all' },
+                        { label: '1-7 Days', value: 'overdue_7' },
+                        { label: '8-14 Days', value: 'overdue_14' },
+                        { label: '15-30 Days', value: 'overdue_30' },
+                        { label: '30+ Days', value: 'overdue_30_plus' },
+                    ].map((opt) => (
+                        <button
+                            key={opt.value}
+                            onClick={() => setFilter(opt.value as any)}
+                            className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
+                                filter === opt.value
+                                    ?  'bg-red-600 text-white'
+                                    : 'bg-white text-gray-700 border hover:bg-gray-50'
+                            }`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* List */}
+                {filtered.length === 0 ? (
+                    <div className="bg-white rounded-lg p-8 text-center shadow-sm">
+                        <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                        <p className="text-gray-600">No pending payments</p>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {filtered.map((c) => {
+                            const days = calculateDaysOverdue(c.lastPayment);
+                            const remaining = c.totalAmount - c.paidAmount;
+                            return (
+                                <div
+                                    key={c.id}
+                                    onClick={() => router.push(`/customers/${c.id}`)}
+                                    className={`bg-white rounded-lg p-3 shadow-sm border-l-4 cursor-pointer hover:shadow-md ${getColor(days)}`}
+                                >
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-xl">{getIcon(days)}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <h3 className="font-semibold truncate">{c.name}</h3>
+                                                <span className="text-xs font-bold px-2 py-0.5 bg-white/50 rounded whitespace-nowrap">
+                          {days}d overdue
+                        </span>
+                                            </div>
+                                            <div className="text-xs text-gray-600 flex gap-4 mb-2">
+                        <span className="flex items-center gap-1">
+                          <Phone className="w-3 h-3" /> {c.phone}
+                        </span>
+                                                {c.address && (
+                                                    <span className="flex items-center gap-1 truncate">
+                            <MapPin className="w-3 h-3" /> {c.address}
+                          </span>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                                <div>
+                                                    <p className="text-gray-600">Pending</p>
+                                                    <p className="font-bold text-red-600">{formatCurrency(remaining)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-600">Installment</p>
+                                                    <p className="font-bold">{formatCurrency(c.installmentAmount)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-gray-600">Last Paid</p>
+                                                    <p className="font-bold text-xs">{formatDate(c.lastPayment)}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>

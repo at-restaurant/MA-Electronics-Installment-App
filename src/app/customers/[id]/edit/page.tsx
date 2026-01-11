@@ -1,14 +1,12 @@
-// src/app/customers/[id]/edit/page.tsx - EDIT PAGE
+'use client';
 
-"use client";
-
-import { Camera, Save, UserPlus, Trash2, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
-import { useRouter, useParams } from "next/navigation";
-import { useState, useEffect } from "react";
-import GlobalHeader from "@/components/GlobalHeader";
-import { db } from "@/lib/db";
-import { OptimizedStorage } from "@/lib/storage-optimized";
-import type { Customer, Guarantor } from "@/types";
+import { Camera, Save, UserPlus, Trash2, MessageSquare } from 'lucide-react';
+import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import GlobalHeader from '@/components/GlobalHeader';
+import { db } from '@/lib/db';
+import { UltraStorage } from '@/lib/storage-ultra-compressed';
+import type { Customer, Guarantor } from '@/types';
 
 export default function EditCustomerPage() {
     const router = useRouter();
@@ -16,20 +14,51 @@ export default function EditCustomerPage() {
     const customerId = Number(params.id);
 
     const [loading, setLoading] = useState(true);
-    const [form, setForm] = useState<any>({});
+    const [form, setForm] = useState({
+        name: '',
+        phone: '',
+        address: '',
+        cnic: '',
+        photo: null as string | null,
+        cnicPhoto: null as string | null | undefined,
+        cnicPhotos: [] as string[],
+        category: 'Electronics',
+        notes: '',
+        autoMessaging: false,
+        totalAmount: '',
+        installmentAmount: '',
+        frequency: 'daily' as 'daily' | 'weekly' | 'monthly',
+        startDate: '',
+        endDate:  '',
+    });
+
     const [guarantors, setGuarantors] = useState<Guarantor[]>([]);
     const [showGuarantorForm, setShowGuarantorForm] = useState(false);
     const [guarantorForm, setGuarantorForm] = useState({
-        name: "", phone: "", cnic: "", photo: null as string | null, relation: ""
+        name: '',
+        phone: '',
+        cnic: '',
+        photo: null as string | null,
+        relation: '',
     });
+
+    const [categories, setCategories] = useState(['Electronics', 'Furniture', 'Mobile', 'Other']);
 
     useEffect(() => {
         loadCustomer();
+        loadCategories();
     }, [customerId]);
+
+    const loadCategories = async () => {
+        const settings = await db.getMeta<any>('app_settings');
+        if (settings?.categories) {
+            setCategories(settings.categories);
+        }
+    };
 
     const loadCustomer = async () => {
         const customer = await db.customers.get(customerId);
-        if (!customer) {
+        if (! customer) {
             router.push('/customers');
             return;
         }
@@ -37,13 +66,19 @@ export default function EditCustomerPage() {
         setForm({
             name: customer.name,
             phone: customer.phone,
-            address: customer.address || "",
-            cnic: customer.cnic || "",
+            address: customer.address || '',
+            cnic: customer. cnic || '',
             photo: customer.photo,
             cnicPhoto: customer.cnicPhoto,
-            category: customer.category || "Electronics",
-            notes: customer.notes || "",
+            cnicPhotos: customer.cnicPhotos || [],
+            category: customer.category || 'Electronics',
+            notes:  customer.notes || '',
             autoMessaging: customer.autoMessaging || false,
+            totalAmount: customer.totalAmount?. toString() || '',
+            installmentAmount: customer.installmentAmount?. toString() || '',
+            frequency:  customer.frequency || 'daily',
+            startDate: customer.startDate || '',
+            endDate: customer. endDate || '',
         });
 
         setGuarantors(customer.guarantors || []);
@@ -52,40 +87,46 @@ export default function EditCustomerPage() {
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
         const file = e.target.files?.[0];
-        if (!file || file.size > 5 * 1024 * 1024) {
-            alert("File too large (max 5MB)");
+        if (! file || file.size > 5 * 1024 * 1024) {
+            alert('File too large (max 5MB)');
             return;
         }
 
         const reader = new FileReader();
         reader.onloadend = () => {
             if (field === 'guarantorPhoto') {
-                setGuarantorForm(prev => ({ ...prev, photo: reader.result as string }));
+                setGuarantorForm((prev) => ({ ...prev, photo: reader.result as string }));
             } else {
-                setForm((prev: any) => ({ ...prev, [field]: reader.result }));
+                setForm((prev) => ({ ...prev, [field]: reader.result }));
             }
         };
         reader.readAsDataURL(file);
     };
 
     const addGuarantor = () => {
-        if (!guarantorForm.name || !guarantorForm.phone) {
-            alert("Name and phone required");
+        if (! guarantorForm.name || !guarantorForm.phone) {
+            alert('Name and phone required');
             return;
         }
 
-        setGuarantors([...guarantors, { id: Date.now(), ...guarantorForm }]);
-        setGuarantorForm({ name: "", phone: "", cnic: "", photo: null, relation: "" });
+        const newGuarantor: Guarantor & { id: number } = {
+            id: Date.now(),
+            ... guarantorForm,
+            photos: guarantorForm.photo ? [guarantorForm.photo] : [],
+        };
+
+        setGuarantors([...guarantors, newGuarantor]);
+        setGuarantorForm({ name: '', phone: '', cnic: '', photo: null, relation: '' });
         setShowGuarantorForm(false);
     };
 
     const removeGuarantor = (id: number) => {
-        setGuarantors(guarantors.filter(g => g.id !== id));
+        setGuarantors(guarantors. filter((g) => g.id !== id));
     };
 
     const handleSubmit = async () => {
-        if (!form.name || !form.phone) {
-            alert("Name and phone are required");
+        if (!form.name || !form. phone || !form.totalAmount || !form.installmentAmount) {
+            alert('Please fill all required fields');
             return;
         }
 
@@ -96,13 +137,19 @@ export default function EditCustomerPage() {
             cnic: form.cnic,
             photo: form.photo,
             cnicPhoto: form.cnicPhoto,
-            category: form.category,
-            notes: form.notes,
-            autoMessaging: form.autoMessaging,
+            cnicPhotos:  form.cnicPhoto ? [form.cnicPhoto] : [],
+            category: form. category,
+            notes: form. notes,
+            autoMessaging:  form.autoMessaging,
+            totalAmount: parseFloat(form.totalAmount),
+            installmentAmount: parseFloat(form.installmentAmount),
+            frequency: form.frequency,
+            startDate: form.startDate,
+            endDate: form.endDate,
             guarantors: guarantors,
         };
 
-        await OptimizedStorage.updateCustomer(customerId, updates);
+        await UltraStorage.update(customerId, updates);
         router.push(`/customers/${customerId}`);
     };
 
@@ -125,7 +172,7 @@ export default function EditCustomerPage() {
                         <div className="flex flex-col items-center">
                             <div className="relative">
                                 <div className="w-32 h-32 rounded-full bg-white/20 backdrop-blur-sm border-4 border-white shadow-xl flex items-center justify-center overflow-hidden">
-                                    {form.photo ? (
+                                    {form.photo ?  (
                                         <img src={form.photo} alt="Customer" className="w-full h-full object-cover" />
                                     ) : (
                                         <Camera className="w-12 h-12 text-white" />
@@ -133,7 +180,12 @@ export default function EditCustomerPage() {
                                 </div>
                                 <label className="absolute bottom-0 right-0 bg-white text-blue-600 p-3 rounded-full cursor-pointer hover:bg-blue-50 shadow-lg">
                                     <Camera className="w-5 h-5" />
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'photo')} />
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => handleImageUpload(e, 'photo')}
+                                    />
                                 </label>
                             </div>
                         </div>
@@ -141,40 +193,61 @@ export default function EditCustomerPage() {
 
                     {/* Form */}
                     <div className="p-6 space-y-4">
+                        {/* Name & Phone */}
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm font-medium mb-1.5">Name *</label>
                                 <input
                                     value={form.name}
-                                    onChange={e => setForm({...form, name: e.target.value})}
+                                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                                    placeholder="Ahmed Khan"
                                     className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium mb-1.5">Phone *</label>
                                 <input
-                                    value={form.phone}
-                                    onChange={e => setForm({...form, phone: e.target.value})}
+                                    value={form. phone}
+                                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                                    placeholder="+92 300 1234567"
                                     className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
                         </div>
 
+                        {/* Category & CNIC */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">Category</label>
+                                <select
+                                    value={form.category}
+                                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                                    className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {categories.map((c) => (
+                                        <option key={c}>{c}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">CNIC</label>
+                                <input
+                                    value={form.cnic}
+                                    onChange={(e) => setForm({ ...form, cnic: e.target.value })}
+                                    placeholder="12345-1234567-1"
+                                    className="w-full px-3 py-2.5 border rounded-lg focus: ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Address */}
                         <div>
                             <label className="block text-sm font-medium mb-1.5">Address</label>
                             <input
                                 value={form.address}
-                                onChange={e => setForm({...form, address: e.target.value})}
-                                className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium mb-1.5">CNIC</label>
-                            <input
-                                value={form.cnic}
-                                onChange={e => setForm({...form, cnic: e.target.value})}
-                                className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                                placeholder="House #, Street, Area"
+                                className="w-full px-3 py-2.5 border rounded-lg focus: ring-2 focus:ring-blue-500"
                             />
                         </div>
 
@@ -188,8 +261,80 @@ export default function EditCustomerPage() {
                                 <label className="flex-1 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 cursor-pointer transition-colors flex items-center justify-center gap-2">
                                     <Camera className="w-5 h-5 text-gray-400" />
                                     <span className="text-sm text-gray-600">Upload CNIC</span>
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'cnicPhoto')} />
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => handleImageUpload(e, 'cnicPhoto')}
+                                    />
                                 </label>
+                            </div>
+                        </div>
+
+                        {/* Payment Details */}
+                        <div className="border-t pt-4">
+                            <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <span className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xs">
+                  💰
+                </span>
+                                Payment Details
+                            </h3>
+
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1.5">Total Amount (₨) *</label>
+                                    <input
+                                        type="number"
+                                        value={form.totalAmount}
+                                        onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
+                                        placeholder="50000"
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1.5">Frequency</label>
+                                    <select
+                                        value={form.frequency}
+                                        onChange={(e) => setForm({ ...form, frequency: e.target.value as any })}
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="daily">Daily</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="monthly">Monthly</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1.5">Installment (₨) *</label>
+                                    <input
+                                        type="number"
+                                        value={form.installmentAmount}
+                                        onChange={(e) => setForm({ ...form, installmentAmount: e.target. value })}
+                                        placeholder="2000"
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1.5">Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={form.startDate}
+                                        onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                                        className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus: ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1.5">End Date</label>
+                                <input
+                                    type="date"
+                                    value={form.endDate}
+                                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                                    className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                />
                             </div>
                         </div>
 
@@ -205,7 +350,7 @@ export default function EditCustomerPage() {
                             <input
                                 type="checkbox"
                                 checked={form.autoMessaging}
-                                onChange={e => setForm({...form, autoMessaging: e.target.checked})}
+                                onChange={(e) => setForm({ ...form, autoMessaging: e.target.checked })}
                                 className="w-6 h-6 text-green-600 rounded"
                             />
                         </label>
@@ -219,23 +364,29 @@ export default function EditCustomerPage() {
                                 </h3>
                                 <button
                                     type="button"
-                                    onClick={() => setShowGuarantorForm(!showGuarantorForm)}
+                                    onClick={() => setShowGuarantorForm(! showGuarantorForm)}
                                     className="text-sm text-purple-600 font-medium"
                                 >
-                                    {showGuarantorForm ? <ChevronUp className="w-4 h-4" /> : 'Add'}
+                                    {showGuarantorForm ? 'Cancel' : 'Add'}
                                 </button>
                             </div>
 
-                            {guarantors.length > 0 && (
+                            {guarantors. length > 0 && (
                                 <div className="space-y-2 mb-3">
-                                    {guarantors.map(g => (
+                                    {guarantors.map((g) => (
                                         <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                                            {g.photo && <img src={g.photo} alt={g.name} className="w-10 h-10 rounded-full object-cover" />}
+                                            {g.photo && (
+                                                <img src={g.photo} alt={g.name} className="w-10 h-10 rounded-full object-cover" />
+                                            )}
                                             <div className="flex-1">
                                                 <p className="font-medium text-sm">{g.name}</p>
                                                 <p className="text-xs text-gray-500">{g.phone}</p>
                                             </div>
-                                            <button type="button" onClick={() => removeGuarantor(g.id)} className="p-1 text-red-500 hover:bg-red-50 rounded">
+                                            <button
+                                                type="button"
+                                                onClick={() => removeGuarantor(g.id)}
+                                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>
@@ -244,22 +395,60 @@ export default function EditCustomerPage() {
                             )}
 
                             {showGuarantorForm && (
-                                <div className="p-4 bg-purple-50 rounded-xl space-y-3">
+                                <div className="p-4 bg-purple-50 rounded-xl border border-purple-200 space-y-3">
                                     <div className="grid grid-cols-2 gap-3">
                                         <input
                                             placeholder="Name *"
                                             value={guarantorForm.name}
-                                            onChange={e => setGuarantorForm({...guarantorForm, name: e.target.value})}
+                                            onChange={(e) =>
+                                                setGuarantorForm({ ...guarantorForm, name: e.target.value })
+                                            }
                                             className="px-3 py-2 border rounded-lg"
                                         />
                                         <input
                                             placeholder="Phone *"
                                             value={guarantorForm.phone}
-                                            onChange={e => setGuarantorForm({...guarantorForm, phone: e.target.value})}
+                                            onChange={(e) =>
+                                                setGuarantorForm({ ...guarantorForm, phone: e.target.value })
+                                            }
                                             className="px-3 py-2 border rounded-lg"
                                         />
                                     </div>
-                                    <button type="button" onClick={addGuarantor} className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input
+                                            placeholder="CNIC"
+                                            value={guarantorForm.cnic}
+                                            onChange={(e) =>
+                                                setGuarantorForm({ ...guarantorForm, cnic: e. target.value })
+                                            }
+                                            className="px-3 py-2 border rounded-lg"
+                                        />
+                                        <input
+                                            placeholder="Relation"
+                                            value={guarantorForm.relation}
+                                            onChange={(e) =>
+                                                setGuarantorForm({ ...guarantorForm, relation: e.target.value })
+                                            }
+                                            className="px-3 py-2 border rounded-lg"
+                                        />
+                                    </div>
+                                    <label className="flex items-center gap-2 p-3 border-2 border-dashed rounded-lg hover:border-purple-500 cursor-pointer">
+                                        <Camera className="w-5 h-5 text-gray-400" />
+                                        <span className="text-sm text-gray-600">
+                      {guarantorForm.photo ? 'Photo added ✓' : 'Add Photo'}
+                    </span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleImageUpload(e, 'guarantorPhoto')}
+                                        />
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={addGuarantor}
+                                        className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700"
+                                    >
                                         Add Guarantor
                                     </button>
                                 </div>
@@ -271,8 +460,9 @@ export default function EditCustomerPage() {
                             <label className="block text-sm font-medium mb-1.5">Notes</label>
                             <textarea
                                 value={form.notes}
-                                onChange={e => setForm({...form, notes: e.target.value})}
+                                onChange={(e) => setForm({ ...form, notes: e. target.value })}
                                 rows={3}
+                                placeholder="Additional information..."
                                 className="w-full px-3 py-2.5 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -282,14 +472,14 @@ export default function EditCustomerPage() {
                             <button
                                 type="button"
                                 onClick={() => router.back()}
-                                className="flex-1 py-3 border-2 border-gray-300 rounded-xl font-medium"
+                                className="flex-1 py-3 border-2 border-gray-300 rounded-xl font-medium hover:bg-gray-50"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="button"
                                 onClick={handleSubmit}
-                                className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"
+                                className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
                             >
                                 <Save className="w-5 h-5" />
                                 Save Changes

@@ -1,19 +1,23 @@
-// src/lib/notificationManager.ts - FIXED
+// src/lib/notificationManager. ts - Production Ready (FIXED)
+
 import { db } from './db';
 import { formatCurrency, calculateDaysOverdue } from './utils';
 import type { Customer, NotificationSettings } from '@/types';
 
+// Default notification settings
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+    enableNotifications: true,
+    paymentReminders:  true,
+    overdueAlerts: true,
+    dailySummary: false,
+    reminderTime: '09:00',
+    soundEnabled:  true,
+};
+
 export class NotificationManager {
     private static instance: NotificationManager;
     private permission: NotificationPermission = 'default';
-    private settings: NotificationSettings = {
-        enableNotifications: true,
-        paymentReminders: true,
-        overdueAlerts: true,
-        dailySummary: false,
-        reminderTime: '09:00',
-        soundEnabled: true,
-    };
+    private settings: NotificationSettings = { ...DEFAULT_NOTIFICATION_SETTINGS };
 
     private constructor() {
         this.loadSettings();
@@ -22,22 +26,21 @@ export class NotificationManager {
         }
     }
 
-    private async loadSettings() {
-        this.settings = await db.getMeta<NotificationSettings>('notifications', {
-            enableNotifications: true,
-            paymentReminders: true,
-            overdueAlerts: true,
-            dailySummary: false,
-            reminderTime: '09:00',
-            soundEnabled: true,
-        });
+    private async loadSettings(): Promise<void> {
+        try {
+            const saved = await db.getMeta<NotificationSettings>('notifications');
+            this.settings = saved ??  { ...DEFAULT_NOTIFICATION_SETTINGS };
+        } catch (error) {
+            console.error('Failed to load notification settings:', error);
+            this.settings = { ... DEFAULT_NOTIFICATION_SETTINGS };
+        }
     }
 
     static getInstance(): NotificationManager {
         if (!NotificationManager.instance) {
             NotificationManager.instance = new NotificationManager();
         }
-        return NotificationManager.instance;
+        return NotificationManager. instance;
     }
 
     async requestPermission(): Promise<boolean> {
@@ -49,7 +52,7 @@ export class NotificationManager {
             return true;
         }
 
-        if (this.permission === 'default') {
+        if (this. permission === 'default') {
             this.permission = await Notification.requestPermission();
             return this.permission === 'granted';
         }
@@ -59,11 +62,15 @@ export class NotificationManager {
 
     async updateSettings(settings: NotificationSettings): Promise<void> {
         this.settings = settings;
-        await db.setMeta('notifications', settings);
+        try {
+            await db.setMeta('notifications', settings);
+        } catch (error) {
+            console.error('Failed to save notification settings:', error);
+        }
     }
 
     getSettings(): NotificationSettings {
-        return this.settings;
+        return { ...this.settings };
     }
 
     private canSendNotification(): boolean {
@@ -82,7 +89,7 @@ export class NotificationManager {
             const notification = new Notification(title, {
                 icon: '/icon-192x192.png',
                 badge: '/icon-192x192.png',
-                ...options,
+                ... options,
             });
 
             notification.onclick = () => {
@@ -97,121 +104,78 @@ export class NotificationManager {
     async checkDailyReminders(): Promise<void> {
         if (!this.settings.paymentReminders) return;
 
-        const customers = await db.customers.toArray();
-        const today = new Date().toISOString().split('T')[0];
+        try {
+            const customers = await db.customers.toArray();
 
-        for (const customer of customers) {
-            if (customer.status === 'completed') continue;
+            for (const customer of customers) {
+                if (customer.status === 'completed') continue;
 
-            const daysOverdue = calculateDaysOverdue(customer.lastPayment);
+                const daysOverdue = calculateDaysOverdue(customer. lastPayment);
 
-            if (customer.frequency === 'daily' && daysOverdue >= 1) {
-                await this.sendNotification(
-                    `Payment Due: ${customer.name}`,
-                    {
-                        body: `Daily installment of ${formatCurrency(customer.installmentAmount)} is due.`,
+                if (customer.frequency === 'daily' && daysOverdue >= 1) {
+                    await this. sendNotification(`Payment Due:  ${customer.name}`, {
+                        body: `Daily installment of ${formatCurrency(customer.installmentAmount)} is due. `,
                         tag: `reminder-${customer.id}`,
                         requireInteraction: false,
-                    }
-                );
+                    });
+                }
             }
+        } catch (error) {
+            console.error('Failed to check daily reminders:', error);
         }
     }
 
     async checkOverdueAlerts(): Promise<void> {
         if (!this.settings.overdueAlerts) return;
 
-        const customers = await db.customers.toArray();
+        try {
+            const customers = await db.customers.toArray();
 
-        for (const customer of customers) {
-            if (customer.status === 'completed') continue;
+            for (const customer of customers) {
+                if (customer.status === 'completed') continue;
 
-            const daysOverdue = calculateDaysOverdue(customer.lastPayment);
+                const daysOverdue = calculateDaysOverdue(customer.lastPayment);
 
-            if (daysOverdue > 7) {
-                await this.sendNotification(
-                    `⚠️ Overdue Payment: ${customer.name}`,
-                    {
-                        body: `Payment is ${daysOverdue} days overdue. Amount: ${formatCurrency(customer.installmentAmount)}`,
+                if (daysOverdue >= 7) {
+                    await this.sendNotification(`⚠️ Payment Overdue:  ${customer.name}`, {
+                        body: `Payment is ${daysOverdue} days overdue.  Amount:  ${formatCurrency(
+                            customer.totalAmount - customer.paidAmount
+                        )}`,
                         tag: `overdue-${customer.id}`,
                         requireInteraction: true,
-                    }
-                );
+                    });
+                }
             }
+        } catch (error) {
+            console.error('Failed to check overdue alerts:', error);
         }
     }
 
-    async sendDailySummary(): Promise<void> {
+    async sendDailySummary(profileName: string, stats: any): Promise<void> {
         if (!this.settings.dailySummary) return;
 
-        const customers = await db.customers.toArray();
-        const payments = await db.payments.toArray();
-
-        const today = new Date().toISOString().split('T')[0];
-        const todayPayments = payments.filter((p) => p.date === today);
-
-        const totalCollected = todayPayments.reduce((sum, p) => sum + p.amount, 0);
-        const activeCustomers = customers.filter(c => c.status === 'active').length;
-
-        await this.sendNotification(
-            '📊 Daily Summary',
-            {
-                body: `Collected: ${formatCurrency(totalCollected)} | Active: ${activeCustomers} customers`,
+        try {
+            await this.sendNotification(`Daily Summary - ${profileName}`, {
+                body: `Received:  ${formatCurrency(stats.totalReceived)} | Expected: ${formatCurrency(
+                    stats.totalExpected
+                )} | Collection:  ${stats.collectionRate. toFixed(1)}%`,
                 tag: 'daily-summary',
                 requireInteraction: false,
-            }
-        );
-    }
-
-    async scheduleDailyChecks(): Promise<void> {
-        if (typeof window === 'undefined') return;
-
-        setInterval(() => {
-            this.checkDailyReminders();
-        }, 60 * 60 * 1000);
-
-        setInterval(() => {
-            this.checkOverdueAlerts();
-        }, 12 * 60 * 60 * 1000);
-
-        const now = new Date();
-        const summaryTime = new Date();
-        summaryTime.setHours(20, 0, 0, 0);
-
-        if (now > summaryTime) {
-            summaryTime.setDate(summaryTime.getDate() + 1);
+            });
+        } catch (error) {
+            console.error('Failed to send daily summary:', error);
         }
-
-        const timeUntilSummary = summaryTime.getTime() - now.getTime();
-
-        setTimeout(() => {
-            this.sendDailySummary();
-            setInterval(() => {
-                this.sendDailySummary();
-            }, 24 * 60 * 60 * 1000);
-        }, timeUntilSummary);
     }
 
-    async notifyPaymentReceived(customerName: string, amount: number): Promise<void> {
-        await this.sendNotification(
-            '✅ Payment Received',
-            {
-                body: `${customerName} paid ${formatCurrency(amount)}`,
-                tag: 'payment-received',
-            }
-        );
-    }
-
-    async notifyPaymentCompleted(customerName: string): Promise<void> {
-        await this.sendNotification(
-            '🎉 Installment Completed!',
-            {
-                body: `${customerName} has completed all payments!`,
-                tag: 'payment-completed',
-                requireInteraction: true,
-            }
-        );
+    async testNotification(): Promise<void> {
+        await this.sendNotification('MA Electronics', {
+            body: 'Notification test successful!',
+            tag: 'test',
+        });
     }
 }
 
-export const notificationManager = NotificationManager.getInstance();
+// Export singleton instance getter
+export function getNotificationManager(): NotificationManager {
+    return NotificationManager. getInstance();
+}
