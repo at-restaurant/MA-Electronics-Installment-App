@@ -1,201 +1,342 @@
-// src/hooks/useCustomers.ts
+// src/hooks/useCustomers.ts - UPDATED to use IndexedDB
 
 import { useState, useEffect, useCallback } from 'react';
-import { Storage } from '@/lib/storage';
+import { db } from '@/lib/db';
 import type { Customer, Payment } from '@/types';
+import { useLiveQuery } from 'dexie-react-hooks';
 
+// ============================================
+// LIVE QUERY HOOKS (Auto-updating)
+// ============================================
+
+/**
+ * Get all customers for a profile (live updates)
+ */
 export function useCustomers(profileId?: number) {
-    const [customers, setCustomers] = useState<Customer[]>([]);
-    const [loading, setLoading] = useState(true);
+    const customers = useLiveQuery(
+        async () => {
+            if (!profileId) return [];
+            return db.getCustomersByProfile(profileId);
+        },
+        [profileId],
+        []
+    );
 
-    const loadCustomers = useCallback(() => {
-        setLoading(true);
-        try {
-            const allCustomers = Storage.get<Customer[]>('customers', []);
-
-            if (profileId) {
-                setCustomers(allCustomers.filter(c => c.profileId === profileId));
-            } else {
-                setCustomers(allCustomers);
-            }
-        } catch (error) {
-            console.error('Error loading customers:', error);
-            setCustomers([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [profileId]);
-
-    useEffect(() => {
-        loadCustomers();
-
-        // Listen for storage updates
-        const handleStorageUpdate = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            if (customEvent.detail?.key === 'customers') {
-                loadCustomers();
-            }
-        };
-
-        window.addEventListener('storage-update', handleStorageUpdate);
-        return () => window.removeEventListener('storage-update', handleStorageUpdate);
-    }, [loadCustomers]);
-
-    const addCustomer = useCallback((customer: Omit<Customer, 'id' | 'createdAt'>) => {
+    const addCustomer = useCallback(async (customer: Omit<Customer, 'id' | 'createdAt'>) => {
         const newCustomer: Customer = {
             ...customer,
             id: Date.now(),
             createdAt: new Date().toISOString(),
         };
 
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        allCustomers.push(newCustomer);
-        Storage.save('customers', allCustomers);
-
-        loadCustomers();
+        await db.customers.add(newCustomer);
         return newCustomer;
-    }, [loadCustomers]);
+    }, []);
 
-    const updateCustomer = useCallback((id: number, updates: Partial<Customer>) => {
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const index = allCustomers.findIndex(c => c.id === id);
-
-        if (index !== -1) {
-            allCustomers[index] = { ...allCustomers[index], ...updates };
-            Storage.save('customers', allCustomers);
-            loadCustomers();
-            return true;
-        }
-        return false;
-    }, [loadCustomers]);
-
-    const deleteCustomer = useCallback((id: number) => {
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const filtered = allCustomers.filter(c => c.id !== id);
-        Storage.save('customers', filtered);
-
-        // Also delete associated payments
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const filteredPayments = allPayments.filter(p => p.customerId !== id);
-        Storage.save('payments', filteredPayments);
-
-        loadCustomers();
+    const updateCustomer = useCallback(async (id: number, updates: Partial<Customer>) => {
+        await db.customers.update(id, updates);
         return true;
-    }, [loadCustomers]);
+    }, []);
 
-    const getCustomer = useCallback((id: number): Customer | undefined => {
-        return customers.find(c => c.id === id);
-    }, [customers]);
+    const deleteCustomer = useCallback(async (id: number) => {
+        // Delete customer and all their payments
+        await db.transaction('rw', db.customers, db.payments, async () => {
+            await db.customers.delete(id);
+            await db.payments.where('customerId').equals(id).delete();
+        });
+        return true;
+    }, []);
+
+    const getCustomer = useCallback(async (id: number): Promise<Customer | undefined> => {
+        return db.customers.get(id);
+    }, []);
 
     return {
-        customers,
-        loading,
+        customers: customers || [],
+        loading: customers === undefined,
         addCustomer,
         updateCustomer,
         deleteCustomer,
         getCustomer,
-        refresh: loadCustomers,
     };
 }
 
+/**
+ * Get active customers for a profile
+ */
+export function useActiveCustomers(profileId?: number) {
+    const customers = useLiveQuery(
+        async () => {
+            if (!profileId) return [];
+            return db.getActiveCustomersByProfile(profileId);
+        },
+        [profileId],
+        []
+    );
+
+    return {
+        customers: customers || [],
+        loading: customers === undefined,
+    };
+}
+
+/**
+ * Get daily collection customers
+ */
+export function useDailyCustomers(profileId?: number) {
+    const customers = useLiveQuery(
+        async () => {
+            if (!profileId) return [];
+            return db.getDailyCustomers(profileId);
+        },
+        [profileId],
+        []
+    );
+
+    return {
+        customers: customers || [],
+        loading: customers === undefined,
+    };
+}
+
+/**
+ * Get overdue customers
+ */
+export function useOverdueCustomers(profileId?: number, days: number = 7) {
+    const customers = useLiveQuery(
+        async () => {
+            if (!profileId) return [];
+            return db.getOverdueCustomers(profileId, days);
+        },
+        [profileId, days],
+        []
+    );
+
+    return {
+        customers: customers || [],
+        loading: customers === undefined,
+    };
+}
+
+// ============================================
+// PAYMENT HOOKS
+// ============================================
+
+/**
+ * Get payments for a customer (live updates)
+ */
 export function usePayments(customerId?: number) {
-    const [payments, setPayments] = useState<Payment[]>([]);
-    const [loading, setLoading] = useState(true);
+    const payments = useLiveQuery(
+        async () => {
+            if (!customerId) return [];
+            return db.getPaymentsByCustomer(customerId);
+        },
+        [customerId],
+        []
+    );
 
-    const loadPayments = useCallback(() => {
-        setLoading(true);
-        try {
-            const allPayments = Storage.get<Payment[]>('payments', []);
-
-            if (customerId) {
-                setPayments(allPayments.filter(p => p.customerId === customerId));
-            } else {
-                setPayments(allPayments);
-            }
-        } catch (error) {
-            console.error('Error loading payments:', error);
-            setPayments([]);
-        } finally {
-            setLoading(false);
-        }
-    }, [customerId]);
-
-    useEffect(() => {
-        loadPayments();
-
-        const handleStorageUpdate = (e: Event) => {
-            const customEvent = e as CustomEvent;
-            if (customEvent.detail?.key === 'payments') {
-                loadPayments();
-            }
-        };
-
-        window.addEventListener('storage-update', handleStorageUpdate);
-        return () => window.removeEventListener('storage-update', handleStorageUpdate);
-    }, [loadPayments]);
-
-    const addPayment = useCallback((payment: Omit<Payment, 'id' | 'createdAt'>) => {
+    const addPayment = useCallback(async (payment: Omit<Payment, 'id' | 'createdAt'>) => {
         const newPayment: Payment = {
             ...payment,
             id: Date.now(),
             createdAt: new Date().toISOString(),
         };
 
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        allPayments.push(newPayment);
-        Storage.save('payments', allPayments);
+        // Add payment and update customer in one transaction
+        await db.transaction('rw', db.payments, db.customers, async () => {
+            await db.payments.add(newPayment);
 
-        // Update customer's paid amount
-        const allCustomers = Storage.get<Customer[]>('customers', []);
-        const customerIndex = allCustomers.findIndex(c => c.id === payment.customerId);
-
-        if (customerIndex !== -1) {
-            allCustomers[customerIndex].paidAmount += payment.amount;
-            allCustomers[customerIndex].lastPayment = payment.date;
-
-            // Update status if completed
-            if (allCustomers[customerIndex].paidAmount >= allCustomers[customerIndex].totalAmount) {
-                allCustomers[customerIndex].status = 'completed';
-            }
-
-            Storage.save('customers', allCustomers);
-        }
-
-        loadPayments();
-        return newPayment;
-    }, [loadPayments]);
-
-    const deletePayment = useCallback((id: number) => {
-        const allPayments = Storage.get<Payment[]>('payments', []);
-        const payment = allPayments.find(p => p.id === id);
-
-        if (payment) {
             // Update customer's paid amount
-            const allCustomers = Storage.get<Customer[]>('customers', []);
-            const customerIndex = allCustomers.findIndex(c => c.id === payment.customerId);
+            const customer = await db.customers.get(payment.customerId);
+            if (customer) {
+                customer.paidAmount += payment.amount;
+                customer.lastPayment = payment.date;
 
-            if (customerIndex !== -1) {
-                allCustomers[customerIndex].paidAmount -= payment.amount;
-                allCustomers[customerIndex].status = 'active';
-                Storage.save('customers', allCustomers);
+                // Update status if completed
+                if (customer.paidAmount >= customer.totalAmount) {
+                    customer.status = 'completed';
+                }
+
+                await db.customers.put(customer);
             }
+        });
 
-            // Remove payment
-            const filtered = allPayments.filter(p => p.id !== id);
-            Storage.save('payments', filtered);
+        return newPayment;
+    }, []);
 
-            loadPayments();
-            return true;
-        }
+    const deletePayment = useCallback(async (id: number) => {
+        const payment = await db.payments.get(id);
+        if (!payment) return false;
 
-        return false;
-    }, [loadPayments]);
+        // Delete payment and update customer in one transaction
+        await db.transaction('rw', db.payments, db.customers, async () => {
+            await db.payments.delete(id);
+
+            // Update customer's paid amount
+            const customer = await db.customers.get(payment.customerId);
+            if (customer) {
+                customer.paidAmount -= payment.amount;
+                customer.status = 'active';
+
+                // Update last payment date
+                const remainingPayments = await db.payments
+                    .where('customerId')
+                    .equals(payment.customerId)
+                    .reverse()
+                    .sortBy('date');
+
+                if (remainingPayments.length > 0) {
+                    customer.lastPayment = remainingPayments[0].date;
+                }
+
+                await db.customers.put(customer);
+            }
+        });
+
+        return true;
+    }, []);
 
     return {
-        payments,
-        loading,
+        payments: payments || [],
+        loading: payments === undefined,
         addPayment,
         deletePayment,
-        refresh: loadPayments,
+    };
+}
+
+/**
+ * Get payments for a date range
+ */
+export function usePaymentsByDateRange(startDate: string, endDate: string) {
+    const payments = useLiveQuery(
+        async () => {
+            return db.getPaymentsByDateRange(startDate, endDate);
+        },
+        [startDate, endDate],
+        []
+    );
+
+    return {
+        payments: payments || [],
+        loading: payments === undefined,
+    };
+}
+
+// ============================================
+// SEARCH HOOK
+// ============================================
+
+/**
+ * Search customers
+ */
+export function useCustomerSearch(profileId?: number) {
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<Customer[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!profileId || !query.trim()) {
+            setResults([]);
+            return;
+        }
+
+        let cancelled = false;
+        setLoading(true);
+
+        db.searchCustomers(profileId, query)
+            .then(customers => {
+                if (!cancelled) {
+                    setResults(customers);
+                    setLoading(false);
+                }
+            })
+            .catch(err => {
+                console.error('Search error:', err);
+                if (!cancelled) {
+                    setResults([]);
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [profileId, query]);
+
+    return {
+        query,
+        setQuery,
+        results,
+        loading,
+    };
+}
+
+// ============================================
+// STATISTICS HOOK
+// ============================================
+
+/**
+ * Get customer statistics
+ */
+export function useCustomerStats(profileId?: number) {
+    const customers = useLiveQuery(
+        async () => {
+            if (!profileId) return [];
+            return db.getCustomersByProfile(profileId);
+        },
+        [profileId],
+        []
+    );
+
+    const stats = useLiveQuery(
+        async () => {
+            if (!customers || customers.length === 0) {
+                return {
+                    total: 0,
+                    active: 0,
+                    completed: 0,
+                    totalRevenue: 0,
+                    totalExpected: 0,
+                    collectionRate: 0,
+                };
+            }
+
+            const active = customers.filter(c => c.status === 'active');
+            const completed = customers.filter(c => c.status === 'completed');
+            const totalRevenue = customers.reduce((sum, c) => sum + c.paidAmount, 0);
+            const totalExpected = customers.reduce((sum, c) => sum + c.totalAmount, 0);
+
+            return {
+                total: customers.length,
+                active: active.length,
+                completed: completed.length,
+                totalRevenue,
+                totalExpected,
+                collectionRate: totalExpected > 0
+                    ? Math.round((totalRevenue / totalExpected) * 100)
+                    : 0,
+            };
+        },
+        [customers],
+        {
+            total: 0,
+            active: 0,
+            completed: 0,
+            totalRevenue: 0,
+            totalExpected: 0,
+            collectionRate: 0,
+        }
+    );
+
+    return {
+        stats: stats || {
+            total: 0,
+            active: 0,
+            completed: 0,
+            totalRevenue: 0,
+            totalExpected: 0,
+            collectionRate: 0,
+        },
+        loading: stats === undefined,
     };
 }

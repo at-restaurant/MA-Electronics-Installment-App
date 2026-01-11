@@ -1,210 +1,119 @@
-// src/lib/storage.ts - FIXED TypeScript error
+// src/lib/storage.ts - UPDATED to use IndexedDB + localStorage fallback
+
+import { db } from './db';
+import type { Profile } from '@/types';
 
 type StorageKey =
     | 'currentProfile'
-    | 'profiles'
-    | 'customers'
-    | 'payments'
-    | 'settings'
-    | 'theme'
+    | 'app_settings'
     | 'notifications'
     | 'language'
-    | 'app_settings'
-    | 'installment_schedules';
+    | 'theme';
 
-// ✅ Add Profile interface
-interface Profile {
-    id: number;
-    name: string;
-    description: string;
-    gradient: string;
-    createdAt: string;
-}
+// ============================================
+// STORAGE SERVICE (IndexedDB + localStorage)
+// ============================================
 
 export const Storage = {
     /**
-     * ✅ Initialize SINGLE default profile (admin creates more)
+     * Save data - Use metadata table for settings, localStorage as fallback
      */
-    initializeDefaultProfile: (): void => {
-        if (typeof window === 'undefined') return;
-
-        const profiles = Storage.get<Profile[]>('profiles', []);
-
-        if (profiles.length === 0) {
-            const defaultProfile: Profile = {
-                id: Date.now(),
-                name: "My Business",
-                description: "Default business account",
-                gradient: "from-blue-500 to-purple-500",
-                createdAt: new Date().toISOString(),
-            };
-
-            Storage.save('profiles', [defaultProfile]);
-            Storage.save('currentProfile', defaultProfile);
-
-            console.log('✅ Default profile created: My Business');
-        }
-    },
-
-    /**
-     * ✅ Get customers for SPECIFIC profile only
-     */
-    getProfileCustomers: (profileId: number) => {
-        const allCustomers = Storage.get<any[]>('customers', []);
-        return allCustomers.filter(c => c.profileId === profileId);
-    },
-
-    /**
-     * ✅ Get payments for SPECIFIC profile only
-     */
-    getProfilePayments: (profileId: number) => {
-        const allCustomers = Storage.getProfileCustomers(profileId);
-        const customerIds = new Set(allCustomers.map(c => c.id));
-
-        const allPayments = Storage.get<any[]>('payments', []);
-        return allPayments.filter(p => customerIds.has(p.customerId));
-    },
-
-    /**
-     * ✅ Delete profile and ALL its data - FIXED
-     */
-    deleteProfile: (profileId: number): boolean => {
+    save: async <T>(key: StorageKey, data: T): Promise<boolean> => {
         try {
-            // Remove profile
-            const profiles = Storage.get<Profile[]>('profiles', []);
-            const filtered = profiles.filter(p => p.id !== profileId);
+            // Try IndexedDB first
+            await db.setMeta(key, data);
 
-            if (filtered.length === 0) {
-                alert('Cannot delete last profile!');
-                return false;
+            // Also save to localStorage as backup
+            if (typeof window !== 'undefined') {
+                localStorage.setItem(key, JSON.stringify(data));
             }
 
-            Storage.save('profiles', filtered);
-
-            // Remove all customers for this profile
-            const allCustomers = Storage.get<any[]>('customers', []);
-            const customerIds = new Set(
-                allCustomers.filter(c => c.profileId === profileId).map(c => c.id)
-            );
-            const filteredCustomers = allCustomers.filter(c => c.profileId !== profileId);
-            Storage.save('customers', filteredCustomers);
-
-            // Remove all payments for this profile's customers
-            const allPayments = Storage.get<any[]>('payments', []);
-            const filteredPayments = allPayments.filter(p => !customerIds.has(p.customerId));
-            Storage.save('payments', filteredPayments);
-
-            // ✅ FIX: Explicitly type the current profile
-            const current = Storage.get<Profile | null>('currentProfile', null);
-            if (current && current.id === profileId) {
-                Storage.save('currentProfile', filtered[0]);
-            }
-
-            console.log(`✅ Profile ${profileId} and all its data deleted`);
             return true;
         } catch (error) {
-            console.error('Error deleting profile:', error);
-            return false;
-        }
-    },
+            console.error(`Storage save error for ${key}:`, error);
 
-    /**
-     * Save data to localStorage
-     */
-    save: <T>(key: StorageKey, data: T): boolean => {
-        try {
+            // Fallback to localStorage only
             if (typeof window !== 'undefined') {
-                const serialized = JSON.stringify(data);
-
                 try {
-                    localStorage.setItem(key, serialized);
-                } catch (quotaError) {
-                    console.warn('Storage full, running cleanup...');
-                    Storage.cleanup();
-
-                    try {
-                        localStorage.setItem(key, serialized);
-                    } catch (retryError) {
-                        console.error('Storage still full after cleanup');
-                        alert('Storage full! Please export your data and clear old records.');
-                        return false;
-                    }
+                    localStorage.setItem(key, JSON.stringify(data));
+                    return true;
+                } catch {
+                    return false;
                 }
-
-                window.dispatchEvent(new CustomEvent('storage-update', {
-                    detail: { key, data }
-                }));
-
-                return true;
             }
-            return false;
-        } catch (error) {
-            console.error(`Storage save error for key "${key}":`, error);
+
             return false;
         }
     },
 
     /**
-     * Get data from localStorage
+     * Get data - Try IndexedDB first, fallback to localStorage
      */
-    get: <T>(key: StorageKey, defaultValue?: T): T => {
+    get: async <T>(key: StorageKey, defaultValue?: T): Promise<T> => {
         try {
+            // Try IndexedDB first
+            const value = await db.getMeta<T>(key);
+            if (value !== undefined) return value;
+
+            // Fallback to localStorage
             if (typeof window !== 'undefined') {
                 const item = localStorage.getItem(key);
-
-                if (item === null || item === undefined) {
-                    return defaultValue as T;
-                }
-
-                // Handle plain string values
-                if (key === 'theme' && typeof item === 'string' && !item.startsWith('{') && !item.startsWith('[')) {
-                    return item as T;
-                }
-
-                try {
-                    return JSON.parse(item) as T;
-                } catch (parseError) {
-                    console.warn(`Failed to parse JSON for key "${key}", returning raw value`);
-                    return item as T;
+                if (item) {
+                    return JSON.parse(item);
                 }
             }
+
             return defaultValue as T;
         } catch (error) {
-            console.error(`Storage get error for key "${key}":`, error);
+            console.error(`Storage get error for ${key}:`, error);
             return defaultValue as T;
         }
     },
 
     /**
-     * Remove specific key
+     * Get data synchronously from localStorage (for backwards compatibility)
      */
-    remove: (key: StorageKey): boolean => {
+    getSync: <T>(key: StorageKey, defaultValue?: T): T => {
+        if (typeof window === 'undefined') return defaultValue as T;
+
         try {
+            const item = localStorage.getItem(key);
+            return item ? JSON.parse(item) : (defaultValue as T);
+        } catch {
+            return defaultValue as T;
+        }
+    },
+
+    /**
+     * Remove data
+     */
+    remove: async (key: StorageKey): Promise<boolean> => {
+        try {
+            await db.metadata.delete(key);
+
             if (typeof window !== 'undefined') {
                 localStorage.removeItem(key);
-                window.dispatchEvent(new CustomEvent('storage-update', {
-                    detail: { key, data: null }
-                }));
-                return true;
             }
-            return false;
+
+            return true;
         } catch (error) {
-            console.error(`Storage remove error for key "${key}":`, error);
+            console.error(`Storage remove error for ${key}:`, error);
             return false;
         }
     },
 
     /**
-     * Clear all data
+     * Clear all storage
      */
-    clear: (): boolean => {
+    clear: async (): Promise<boolean> => {
         try {
+            await db.clearAll();
+
             if (typeof window !== 'undefined') {
                 localStorage.clear();
-                window.dispatchEvent(new CustomEvent('storage-clear'));
-                return true;
             }
-            return false;
+
+            return true;
         } catch (error) {
             console.error('Storage clear error:', error);
             return false;
@@ -212,154 +121,44 @@ export const Storage = {
     },
 
     /**
-     * Cleanup old data PER PROFILE
-     */
-    cleanup: (): void => {
-        try {
-            if (typeof window === 'undefined') return;
-
-            console.log('Running storage cleanup...');
-
-            const profiles = Storage.get<Profile[]>('profiles', []);
-
-            // Clean each profile separately
-            profiles.forEach(profile => {
-                const customers = Storage.getProfileCustomers(profile.id);
-
-                // Keep only last 50 completed customers per profile
-                const completedCustomers = customers.filter(c => c.status === 'completed');
-                const activeCustomers = customers.filter(c => c.status !== 'completed');
-
-                if (completedCustomers.length > 50) {
-                    completedCustomers.sort((a, b) =>
-                        new Date(b.lastPayment).getTime() - new Date(a.lastPayment).getTime()
-                    );
-
-                    console.log(`Profile ${profile.name}: Removed ${completedCustomers.length - 50} old customers`);
-                }
-            });
-
-            console.log('Cleanup completed');
-        } catch (error) {
-            console.error('Cleanup error:', error);
-        }
-    },
-
-    /**
-     * Check if key exists
-     */
-    has: (key: StorageKey): boolean => {
-        try {
-            if (typeof window !== 'undefined') {
-                return localStorage.getItem(key) !== null;
-            }
-            return false;
-        } catch (error) {
-            return false;
-        }
-    },
-
-    /**
-     * Get all keys
-     */
-    keys: (): string[] => {
-        try {
-            if (typeof window !== 'undefined') {
-                return Object.keys(localStorage);
-            }
-            return [];
-        } catch (error) {
-            return [];
-        }
-    },
-
-    /**
      * Get storage size
      */
-    getSize: (): number => {
-        try {
-            if (typeof window !== 'undefined') {
-                let size = 0;
-                for (const key in localStorage) {
-                    if (localStorage.hasOwnProperty(key)) {
-                        size += localStorage[key].length + key.length;
-                    }
-                }
-                return size;
-            }
-            return 0;
-        } catch (error) {
-            return 0;
-        }
+    getSize: async (): Promise<number> => {
+        return db.getStorageSize();
     },
 
     /**
      * Get formatted size
      */
-    getSizeFormatted: (): string => {
-        const bytes = Storage.getSize();
-        if (bytes === 0) return '0 Bytes';
-
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-        return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+    getSizeFormatted: async (): Promise<string> => {
+        const bytes = await Storage.getSize();
+        return formatBytes(bytes);
     },
 
     /**
-     * Get usage percentage (5MB limit)
+     * Get usage percentage (estimated 50MB limit for IndexedDB)
      */
-    getUsagePercentage: (): number => {
-        const bytes = Storage.getSize();
-        const limitBytes = 5 * 1024 * 1024;
-        return Math.round((bytes / limitBytes) * 100);
+    getUsagePercentage: async (): Promise<number> => {
+        const bytes = await Storage.getSize();
+        const limitBytes = 50 * 1024 * 1024; // 50MB
+        return Math.min(Math.round((bytes / limitBytes) * 100), 100);
     },
 
     /**
      * Export all data
      */
-    exportData: (): string => {
-        try {
-            if (typeof window !== 'undefined') {
-                const data: Record<string, any> = {};
-                for (const key in localStorage) {
-                    if (localStorage.hasOwnProperty(key)) {
-                        try {
-                            data[key] = JSON.parse(localStorage[key]);
-                        } catch {
-                            data[key] = localStorage[key];
-                        }
-                    }
-                }
-                return JSON.stringify(data, null, 2);
-            }
-            return '{}';
-        } catch (error) {
-            console.error('Export data error:', error);
-            return '{}';
-        }
+    exportData: async (): Promise<string> => {
+        const data = await db.exportAll();
+        return JSON.stringify(data, null, 2);
     },
 
     /**
      * Import data
      */
-    importData: (jsonString: string): boolean => {
+    importData: async (jsonString: string): Promise<boolean> => {
         try {
-            if (typeof window !== 'undefined') {
-                const data = JSON.parse(jsonString);
-                for (const key in data) {
-                    if (data.hasOwnProperty(key)) {
-                        if (typeof data[key] === 'object') {
-                            localStorage.setItem(key, JSON.stringify(data[key]));
-                        } else {
-                            localStorage.setItem(key, data[key]);
-                        }
-                    }
-                }
-                return true;
-            }
-            return false;
+            const data = JSON.parse(jsonString);
+            return await db.importAll(data);
         } catch (error) {
             console.error('Import data error:', error);
             return false;
@@ -367,14 +166,89 @@ export const Storage = {
     },
 
     /**
+     * Cleanup old data
+     */
+    cleanup: async (): Promise<number> => {
+        return await db.cleanup();
+    },
+
+    /**
      * Health check
      */
-    healthCheck: (): void => {
-        const usage = Storage.getUsagePercentage();
+    healthCheck: async (): Promise<void> => {
+        const usage = await Storage.getUsagePercentage();
 
         if (usage > 80) {
-            console.warn(`Storage usage at ${usage}%. Running cleanup...`);
-            Storage.cleanup();
+            console.warn(`⚠️ Storage usage at ${usage}%. Running cleanup...`);
+            const cleaned = await Storage.cleanup();
+            console.log(`✅ Cleaned ${cleaned} old records`);
         }
-    }
+    },
+
+    /**
+     * Initialize default profile (for backward compatibility)
+     */
+    initializeDefaultProfile: async (): Promise<void> => {
+        const profileCount = await db.profiles.count();
+
+        if (profileCount === 0) {
+            const defaultProfile: Profile = {
+                id: Date.now(),
+                name: 'My Business',
+                description: 'Default business account',
+                gradient: 'from-blue-500 to-purple-500',
+                createdAt: new Date().toISOString(),
+            };
+
+            await db.profiles.add(defaultProfile);
+            await Storage.save('currentProfile', defaultProfile);
+        }
+    },
+};
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+function formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
+}
+
+// ============================================
+// BACKWARDS COMPATIBILITY
+// ============================================
+
+// For components that still use Storage.get('customers', [])
+// We'll keep these as wrappers to database queries
+
+export const LegacyStorage = {
+    get: <T>(key: string, defaultValue: T): T => {
+        // This is for OLD code that uses sync storage
+        // New code should use db directly
+        if (typeof window === 'undefined') return defaultValue;
+
+        try {
+            const item = localStorage.getItem(key);
+            return item ? JSON.parse(item) : defaultValue;
+        } catch {
+            return defaultValue;
+        }
+    },
+
+    save: <T>(key: string, data: T): boolean => {
+        if (typeof window === 'undefined') return false;
+
+        try {
+            localStorage.setItem(key, JSON.stringify(data));
+            return true;
+        } catch {
+            return false;
+        }
+    },
 };

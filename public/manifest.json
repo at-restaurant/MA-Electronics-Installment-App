@@ -1,13 +1,15 @@
 {
   "name": "MA Electronics Installment Manager",
   "short_name": "MA Installment",
-  "description": "Manage customer installment payments with ease",
+  "description": "Professional offline-first installment management system",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0284c7",
   "orientation": "portrait",
   "scope": "/",
+  "offline_enabled": true,
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192x192.png",
@@ -27,66 +29,27 @@
     "finance",
     "productivity"
   ],
-  "screenshots": [
-    {
-      "src": "/screenshot1.png",
-      "sizes": "540x720",
-      "type": "image/png"
-    },
-    {
-      "src": "/screenshot2.png",
-      "sizes": "540x720",
-      "type": "image/png"
-    }
-  ],
   "shortcuts": [
     {
       "name": "Add Customer",
       "short_name": "Add",
       "description": "Add a new customer",
       "url": "/customers/add",
-      "icons": [
-        {
-          "src": "/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{"src": "/icon-192x192.png", "sizes": "192x192"}]
     },
     {
       "name": "Daily Collection",
       "short_name": "Daily",
       "description": "Mark daily payments",
       "url": "/daily",
-      "icons": [
-        {
-          "src": "/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{"src": "/icon-192x192.png", "sizes": "192x192"}]
     },
     {
       "name": "Pending Payments",
       "short_name": "Pending",
       "description": "View pending payments",
       "url": "/pending",
-      "icons": [
-        {
-          "src": "/icon-192x192.png",
-          "sizes": "192x192"
-        }
-      ]
+      "icons": [{"src": "/icon-192x192.png", "sizes": "192x192"}]
     }
-  ],
-  "related_applications": [],
-  "prefer_related_applications": false,
-  "share_target": {
-    "action": "/customers/add",
-    "method": "GET",
-    "enctype": "application/x-www-form-urlencoded",
-    "params": {
-      "title": "name",
-      "text": "notes",
-      "url": "url"
-    }
-  }
+  ]
 }

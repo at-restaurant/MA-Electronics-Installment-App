@@ -1,4 +1,4 @@
-// src/app/settings/page.tsx - UPDATED with Google Drive
+// src/app/settings/page.tsx - UPDATED (Removed Google Drive)
 
 "use client";
 
@@ -11,17 +11,16 @@ import {
     Info,
     Trash2,
     Download,
+    Upload,
     Briefcase,
     Plus,
     X,
     Tag,
-    Cloud,
-    ChevronRight
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import ProfileManager from "@/components/ProfileManager";
 import { Storage } from "@/lib/storage";
-import { driveManager } from "@/lib/driveManager";
+import { db } from "@/lib/db";
 import type { Profile, NotificationSettings } from "@/types";
 
 interface AppSettings {
@@ -42,7 +41,6 @@ export default function SettingsPage() {
         soundEnabled: true,
     });
     const [storageInfo, setStorageInfo] = useState({ size: '0 KB', percentage: 0 });
-    const [driveAccounts, setDriveAccounts] = useState(0);
 
     const [appSettings, setAppSettings] = useState<AppSettings>({
         categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
@@ -54,14 +52,10 @@ export default function SettingsPage() {
     useEffect(() => {
         loadSettings();
         updateStorageInfo();
-        loadDriveInfo();
-
-        // Auto backup every 24 hours
-        driveManager.startAutoBackup(24);
     }, []);
 
-    const loadSettings = () => {
-        const profile = Storage.get<Profile | null>("currentProfile", null);
+    const loadSettings = async () => {
+        const profile = await Storage.get<Profile | null>("currentProfile", null);
         if (!profile) {
             router.push("/");
             return;
@@ -69,7 +63,7 @@ export default function SettingsPage() {
 
         setCurrentProfile(profile);
 
-        const savedNotifications = Storage.get<NotificationSettings>("notifications", {
+        const savedNotifications = await Storage.get<NotificationSettings>("notifications", {
             enableNotifications: true,
             paymentReminders: true,
             overdueAlerts: true,
@@ -79,34 +73,29 @@ export default function SettingsPage() {
         });
         setNotifications(savedNotifications);
 
-        const savedAppSettings = Storage.get<AppSettings>('app_settings', {
+        const savedAppSettings = await Storage.get<AppSettings>('app_settings', {
             categories: ['Electronics', 'Furniture', 'Mobile', 'Appliances', 'Other'],
             defaultCategory: 'Electronics',
         });
         setAppSettings(savedAppSettings);
     };
 
-    const loadDriveInfo = () => {
-        const accounts = driveManager.getAccounts();
-        setDriveAccounts(accounts.length);
-    };
-
-    const updateStorageInfo = () => {
-        const size = Storage.getSizeFormatted();
-        const percentage = Storage.getUsagePercentage();
+    const updateStorageInfo = async () => {
+        const size = await Storage.getSizeFormatted();
+        const percentage = await Storage.getUsagePercentage();
         setStorageInfo({ size, percentage });
     };
 
-    const handleNotificationToggle = (key: keyof NotificationSettings) => {
+    const handleNotificationToggle = async (key: keyof NotificationSettings) => {
         const updated = {
             ...notifications,
             [key]: !notifications[key],
         };
         setNotifications(updated);
-        Storage.save("notifications", updated);
+        await Storage.save("notifications", updated);
     };
 
-    const handleAddCategory = () => {
+    const handleAddCategory = async () => {
         if (!newCategory.trim()) {
             alert('Please enter category name');
             return;
@@ -123,12 +112,12 @@ export default function SettingsPage() {
         };
 
         setAppSettings(updated);
-        Storage.save('app_settings', updated);
+        await Storage.save('app_settings', updated);
         setNewCategory('');
         setShowAddCategory(false);
     };
 
-    const handleDeleteCategory = (category: string) => {
+    const handleDeleteCategory = async (category: string) => {
         if (appSettings.categories.length <= 1) {
             alert('Cannot delete last category');
             return;
@@ -147,58 +136,80 @@ export default function SettingsPage() {
         };
 
         setAppSettings(updated);
-        Storage.save('app_settings', updated);
+        await Storage.save('app_settings', updated);
     };
 
-    const handleSetDefaultCategory = (category: string) => {
+    const handleSetDefaultCategory = async (category: string) => {
         const updated = {
             ...appSettings,
             defaultCategory: category,
         };
         setAppSettings(updated);
-        Storage.save('app_settings', updated);
+        await Storage.save('app_settings', updated);
     };
 
-    const handleExportData = () => {
-        const customers = Storage.get("customers", []);
-        const payments = Storage.get("payments", []);
-        const profiles = Storage.get("profiles", []);
+    const handleExportData = async () => {
+        try {
+            const data = await db.exportAll();
+            const blob = new Blob([JSON.stringify(data, null, 2)], {
+                type: "application/json",
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `ma-backup-${new Date().toISOString().split("T")[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
 
-        const data = {
-            profiles,
-            customers,
-            payments,
-            exportDate: new Date().toISOString(),
-            appVersion: "1.0.0"
+            alert("✅ Data exported successfully!");
+        } catch (error) {
+            console.error('Export error:', error);
+            alert("❌ Export failed!");
+        }
+    };
+
+    const handleImportData = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const success = await db.importAll(JSON.parse(text));
+
+                if (success) {
+                    alert("✅ Data imported successfully!");
+                    window.location.reload();
+                } else {
+                    alert("❌ Import failed! Invalid backup file.");
+                }
+            } catch (error) {
+                console.error('Import error:', error);
+                alert("❌ Import failed! Invalid backup file.");
+            }
         };
 
-        const blob = new Blob([JSON.stringify(data, null, 2)], {
-            type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `ma-backup-${new Date().toISOString().split("T")[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        alert("Data exported successfully!");
+        input.click();
     };
 
-    const handleClearData = () => {
+    const handleClearData = async () => {
         if (!confirm("Are you sure? This will delete ALL data and cannot be undone!")) return;
         if (!confirm("Last warning! This action is permanent. Continue?")) return;
 
-        Storage.clear();
+        await db.clearAll();
         alert("All data cleared successfully");
         router.push("/");
     };
 
-    const handleCleanupStorage = () => {
+    const handleCleanupStorage = async () => {
         if (confirm("Clean up old completed records to free space?")) {
-            Storage.cleanup();
-            updateStorageInfo();
-            alert("Cleanup completed! Old records have been removed.");
+            const cleaned = await Storage.cleanup();
+            await updateStorageInfo();
+            alert(`✅ Cleanup completed! Removed ${cleaned} old records.`);
         }
     };
 
@@ -211,31 +222,6 @@ export default function SettingsPage() {
             </div>
 
             <div className="p-4 space-y-4">
-                {/* ✅ NEW: Google Drive Section */}
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 shadow-lg">
-                    <button
-                        onClick={() => router.push('/drive')}
-                        className="w-full text-left"
-                    >
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                                    <Cloud className="w-6 h-6 text-white" />
-                                </div>
-                                <div>
-                                    <h3 className="font-semibold text-white">Google Drive Backup</h3>
-                                    <p className="text-sm text-blue-100">
-                                        {driveAccounts === 0
-                                            ? 'Not connected - Tap to setup'
-                                            : `${driveAccounts} account${driveAccounts > 1 ? 's' : ''} connected`}
-                                    </p>
-                                </div>
-                            </div>
-                            <ChevronRight className="w-6 h-6 text-white" />
-                        </div>
-                    </button>
-                </div>
-
                 {/* Profile Section */}
                 <div className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-200">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -282,8 +268,8 @@ export default function SettingsPage() {
                                     <span className="font-medium">{category}</span>
                                     {appSettings.defaultCategory === category && (
                                         <span className="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded">
-                                            Default
-                                        </span>
+                      Default
+                    </span>
                                     )}
                                 </div>
                                 <button
@@ -412,7 +398,14 @@ export default function SettingsPage() {
                             className="w-full py-3 bg-green-50 text-green-600 rounded-lg font-medium hover:bg-green-100 transition-colors flex items-center justify-center gap-2"
                         >
                             <Download className="w-4 h-4" />
-                            Export Local Backup
+                            Export Backup
+                        </button>
+                        <button
+                            onClick={handleImportData}
+                            className="w-full py-3 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Upload className="w-4 h-4" />
+                            Import Backup
                         </button>
                         <button
                             onClick={handleClearData}
@@ -439,6 +432,10 @@ export default function SettingsPage() {
                             <span>App Name</span>
                             <span className="font-medium">MA Installment App</span>
                         </div>
+                        <div className="flex justify-between py-2">
+                            <span>Storage Type</span>
+                            <span className="font-medium">IndexedDB (Offline-First)</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -446,9 +443,9 @@ export default function SettingsPage() {
             {showProfileManager && (
                 <ProfileManager
                     onClose={() => setShowProfileManager(false)}
-                    onProfilesUpdate={() => {
-                        loadSettings();
-                        updateStorageInfo();
+                    onProfilesUpdate={async () => {
+                        await loadSettings();
+                        await updateStorageInfo();
                     }}
                 />
             )}

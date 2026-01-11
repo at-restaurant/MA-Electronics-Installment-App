@@ -1,170 +1,223 @@
-// public/sw.js - Service Worker for PWA
+// public/sw.js - PRODUCTION-READY SERVICE WORKER
 
-const CACHE_NAME = 'ma-installment-v1.0.0';
-const RUNTIME_CACHE = 'ma-runtime-v1.0.0';
+const CACHE_VERSION = 'v1.0.0';
+const STATIC_CACHE = `ma-static-${CACHE_VERSION}`;
+const DYNAMIC_CACHE = `ma-dynamic-${CACHE_VERSION}`;
+const IMAGE_CACHE = `ma-images-${CACHE_VERSION}`;
 
-// Assets to cache on install
+// Critical assets to cache immediately
 const STATIC_ASSETS = [
     '/',
-    '/customers',
-    '/daily',
-    '/pending',
-    '/settings',
     '/manifest.json',
     '/icon-192x192.png',
     '/icon-512x512.png',
+    '/offline.html',
 ];
 
-// Install event - cache static assets
+// ============================================
+// INSTALL EVENT
+// ============================================
+
 self.addEventListener('install', (event) => {
-    console.log('Service Worker installing...');
+    console.log('📦 SW: Installing...');
 
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => {
-                console.log('Caching static assets');
+        caches.open(STATIC_CACHE)
+            .then(cache => {
+                console.log('✅ SW: Caching static assets');
                 return cache.addAll(STATIC_ASSETS);
             })
             .then(() => self.skipWaiting())
+            .catch(err => console.error('❌ SW: Install failed:', err))
     );
 });
 
-// Activate event - clean up old caches
+// ============================================
+// ACTIVATE EVENT
+// ============================================
+
 self.addEventListener('activate', (event) => {
-    console.log('Service Worker activating...');
+    console.log('🚀 SW: Activating...');
 
     event.waitUntil(
         caches.keys()
-            .then((cacheNames) => {
+            .then(keys => {
                 return Promise.all(
-                    cacheNames
-                        .filter((name) => name !== CACHE_NAME && name !== RUNTIME_CACHE)
-                        .map((name) => {
-                            console.log('Deleting old cache:', name);
-                            return caches.delete(name);
+                    keys
+                        .filter(key =>
+                            key !== STATIC_CACHE &&
+                            key !== DYNAMIC_CACHE &&
+                            key !== IMAGE_CACHE
+                        )
+                        .map(key => {
+                            console.log('🗑️ SW: Deleting old cache:', key);
+                            return caches.delete(key);
                         })
                 );
             })
-            .then(() => self.clients.claim())
+            .then(() => {
+                console.log('✅ SW: Activated');
+                return self.clients.claim();
+            })
     );
 });
 
-// Fetch event - network first, fallback to cache
+// ============================================
+// FETCH EVENT - SMART CACHING
+// ============================================
+
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
     // Skip non-GET requests
-    if (request.method !== 'GET') {
-        return;
-    }
+    if (request.method !== 'GET') return;
 
     // Skip chrome-extension and other schemes
-    if (!url.protocol.startsWith('http')) {
-        return;
-    }
+    if (!url.protocol.startsWith('http')) return;
 
-    // API requests - network only
-    if (url.pathname.startsWith('/api/')) {
+    // ============================================
+    // STRATEGY 1: Network Only (API/External)
+    // ============================================
+
+    if (
+        url.pathname.startsWith('/api/') ||
+        url.hostname.includes('supabase') ||
+        url.hostname.includes('googleapis')
+    ) {
         event.respondWith(fetch(request));
         return;
     }
 
-    // For static assets and pages - cache first, network fallback
+    // ============================================
+    // STRATEGY 2: Cache First (Images)
+    // ============================================
+
+    if (request.destination === 'image') {
+        event.respondWith(
+            caches.match(request)
+                .then(cached => {
+                    if (cached) return cached;
+
+                    return fetch(request)
+                        .then(response => {
+                            if (response && response.ok) {
+                                const clone = response.clone();
+                                caches.open(IMAGE_CACHE)
+                                    .then(cache => cache.put(request, clone));
+                            }
+                            return response;
+                        })
+                        .catch(() => {
+                            // Return placeholder SVG
+                            return new Response(
+                                '<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><rect fill="#e5e7eb" width="200" height="200"/><text x="50%" y="50%" text-anchor="middle" fill="#9ca3af" font-size="16">Offline</text></svg>',
+                                { headers: { 'Content-Type': 'image/svg+xml' } }
+                            );
+                        });
+                })
+        );
+        return;
+    }
+
+    // ============================================
+    // STRATEGY 3: Network First (HTML pages)
+    // ============================================
+
+    if (request.mode === 'navigate') {
+        event.respondWith(
+            fetch(request)
+                .then(response => {
+                    // Cache successful responses
+                    if (response.ok) {
+                        const clone = response.clone();
+                        caches.open(DYNAMIC_CACHE)
+                            .then(cache => cache.put(request, clone));
+                    }
+                    return response;
+                })
+                .catch(() => {
+                    // Try cache first
+                    return caches.match(request)
+                        .then(cached => {
+                            if (cached) return cached;
+
+                            // Fallback to offline page
+                            return caches.match('/offline.html');
+                        });
+                })
+        );
+        return;
+    }
+
+    // ============================================
+    // STRATEGY 4: Stale While Revalidate (Assets)
+    // ============================================
+
     event.respondWith(
         caches.match(request)
-            .then((cachedResponse) => {
-                if (cachedResponse) {
-                    // Return cached version and update cache in background
-                    event.waitUntil(
-                        fetch(request)
-                            .then((response) => {
-                                if (response && response.status === 200) {
-                                    return caches.open(RUNTIME_CACHE)
-                                        .then((cache) => {
-                                            cache.put(request, response.clone());
-                                            return response;
-                                        });
-                                }
-                                return response;
-                            })
-                            .catch(() => {
-                                // Network failed, cached version already returned
-                            })
-                    );
-                    return cachedResponse;
-                }
-
-                // Not in cache, fetch from network
-                return fetch(request)
-                    .then((response) => {
-                        // Cache successful responses
-                        if (response && response.status === 200) {
-                            const responseClone = response.clone();
-                            caches.open(RUNTIME_CACHE)
-                                .then((cache) => {
-                                    cache.put(request, responseClone);
-                                });
+            .then(cached => {
+                const fetchPromise = fetch(request)
+                    .then(response => {
+                        if (response && response.ok) {
+                            const clone = response.clone();
+                            caches.open(DYNAMIC_CACHE)
+                                .then(cache => cache.put(request, clone));
                         }
                         return response;
                     })
-                    .catch(() => {
-                        // Network failed and not in cache
-                        // Return offline page for navigation requests
-                        if (request.mode === 'navigate') {
-                            return caches.match('/');
-                        }
-                        return new Response('Offline', {
-                            status: 503,
-                            statusText: 'Service Unavailable',
-                        });
-                    });
+                    .catch(() => cached);
+
+                return cached || fetchPromise;
             })
     );
 });
 
-// Background sync for offline actions
-self.addEventListener('sync', (event) => {
-    console.log('Background sync:', event.tag);
+// ============================================
+// BACKGROUND SYNC
+// ============================================
 
-    if (event.tag === 'sync-payments') {
-        event.waitUntil(syncPayments());
+self.addEventListener('sync', (event) => {
+    console.log('🔄 SW: Background sync:', event.tag);
+
+    if (event.tag === 'sync-data') {
+        event.waitUntil(syncData());
     }
 });
 
-async function syncPayments() {
+async function syncData() {
     try {
-        // This would sync offline payments when back online
         const clients = await self.clients.matchAll();
-        clients.forEach((client) => {
+        clients.forEach(client => {
             client.postMessage({
-                type: 'SYNC_COMPLETE',
-                message: 'Payments synced successfully',
+                type: 'SYNC_NOW',
+                timestamp: Date.now(),
             });
         });
+        console.log('✅ SW: Sync message sent');
     } catch (error) {
-        console.error('Sync failed:', error);
+        console.error('❌ SW: Sync failed:', error);
     }
 }
 
-// Push notification event
+// ============================================
+// PUSH NOTIFICATIONS
+// ============================================
+
 self.addEventListener('push', (event) => {
     const data = event.data ? event.data.json() : {};
+
     const options = {
         body: data.body || 'You have a new notification',
         icon: '/icon-192x192.png',
         badge: '/icon-192x192.png',
         vibrate: [200, 100, 200],
         data: data,
+        tag: data.tag || 'default',
+        requireInteraction: data.requireInteraction || false,
         actions: [
-            {
-                action: 'view',
-                title: 'View',
-            },
-            {
-                action: 'dismiss',
-                title: 'Dismiss',
-            },
+            { action: 'view', title: 'View' },
+            { action: 'dismiss', title: 'Dismiss' },
         ],
     };
 
@@ -176,7 +229,6 @@ self.addEventListener('push', (event) => {
     );
 });
 
-// Notification click event
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
 
@@ -187,7 +239,10 @@ self.addEventListener('notificationclick', (event) => {
     }
 });
 
-// Message event - communication with client
+// ============================================
+// MESSAGE HANDLER
+// ============================================
+
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
@@ -195,10 +250,18 @@ self.addEventListener('message', (event) => {
 
     if (event.data && event.data.type === 'CACHE_URLS') {
         event.waitUntil(
-            caches.open(RUNTIME_CACHE)
-                .then((cache) => cache.addAll(event.data.urls))
+            caches.open(DYNAMIC_CACHE)
+                .then(cache => cache.addAll(event.data.urls))
+        );
+    }
+
+    if (event.data && event.data.type === 'CLEAR_CACHE') {
+        event.waitUntil(
+            caches.keys().then(keys =>
+                Promise.all(keys.map(key => caches.delete(key)))
+            )
         );
     }
 });
 
-console.log('Service Worker loaded');
+console.log('✅ SW: Loaded successfully');

@@ -1,14 +1,16 @@
-// src/app/layout.tsx - Updated with proper theme support
+// src/app/layout.tsx - UPDATED with offline support
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import '@/app/globals.css';
-import { NotificationInitializer } from '@/components/NotificationInitializer';
+import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
+import { DatabaseInitializer } from '@/components/DatabaseInitializer';
+
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
     title: 'MA Electronics Installment',
-    description: 'Manage customer installment payments with ease',
+    description: 'Offline-first installment management system',
     manifest: '/manifest.json',
     appleWebApp: {
         capable: true,
@@ -45,19 +47,43 @@ export default function RootLayout({
             <link rel="apple-touch-icon" href="/icon-192x192.png" />
         </head>
         <body className={inter.className}>
-            <NotificationInitializer />
-            {children}
+        {/* Initialize database and run migrations */}
+        <DatabaseInitializer />
+
+        {/* Show offline/online status */}
+        <OfflineIndicator />
+
+        {/* App content */}
+        {children}
+
+        {/* Service Worker registration */}
         <script
             dangerouslySetInnerHTML={{
                 __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker.register('/sw.js')
-                    .then(registration => {
-                      console.log('SW registered:', registration);
+                    .then(reg => {
+                      console.log('✅ Service Worker registered:', reg.scope);
+                      
+                      // Check for updates
+                      reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        if (newWorker) {
+                          newWorker.addEventListener('statechanged', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                              // New version available
+                              if (confirm('🔄 New version available! Update now?')) {
+                                newWorker.postMessage({ type: 'SKIP_WAITING' });
+                                window.location.reload();
+                              }
+                            }
+                          });
+                        }
+                      });
                     })
-                    .catch(error => {
-                      console.log('SW registration failed:', error);
+                    .catch(err => {
+                      console.log('❌ Service Worker registration failed:', err);
                     });
                 });
               }
