@@ -41,31 +41,32 @@ export class MADatabase extends Dexie {
         });
     }
 
-    // ============================================
-    // CUSTOMER QUERIES
-    // ============================================
 
     async getCustomersByProfile(profileId: number): Promise<Customer[]> {
         return this.customers. where('profileId').equals(profileId).toArray();
     }
 
-    async getActiveCustomersByProfile(profileId: number): Promise<Customer[]> {
-        return this.customers. where('[profileId+status]').equals([profileId, 'active']).toArray();
+    async getActiveCustomersByProfile(profileId:  number): Promise<Customer[]> {
+        return this.customers
+            .where('[profileId+status]')
+            .equals([profileId, 'active'])
+            .toArray();
     }
 
     async searchCustomers(profileId: number, query: string): Promise<Customer[]> {
         const lowerQuery = query.toLowerCase();
         return this.customers
-            . where('profileId')
+            .where('profileId')
             .equals(profileId)
-            .filter(
-                (c) =>
+            .toArray()
+            .then(customers =>
+                customers.filter(c =>
                     c.name.toLowerCase().includes(lowerQuery) ||
                     c.phone.includes(query) ||
                     c.cnic.includes(query) ||
                     (c.category && c.category.toLowerCase().includes(lowerQuery))
-            )
-            .toArray();
+                )
+            );
     }
 
     // ============================================
@@ -106,9 +107,9 @@ export class MADatabase extends Dexie {
             .toArray();
     }
 
-    async getOverdueCustomers(profileId: number, days: number = 7): Promise<Customer[]> {
+    async getOverdueCustomers(profileId: number, minDays: number = 0): Promise<Customer[]> {
         const cutoff = new Date();
-        cutoff.setDate(cutoff. getDate() - days);
+        cutoff.setDate(cutoff. getDate() - minDays);
         const cutoffStr = cutoff.toISOString().split('T')[0];
 
         return this.customers

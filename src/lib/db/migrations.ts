@@ -213,6 +213,8 @@ export async function initializeDefaultProfile(): Promise<void> {
             description: 'Default business account',
             gradient: 'from-blue-500 to-purple-500',
             createdAt: new Date().toISOString(),
+            totalInvestment: 0,  // ✅ NEW
+            investmentHistory: [],  // ✅ NEW
         };
 
         await db.profiles.add(defaultProfile);

@@ -98,3 +98,20 @@ export interface WhatsAppQueue {
     scheduledFor?: string;
     createdAt?:  string;
 }
+
+export interface Profile {
+    id: number;
+    name: string;
+    description: string;
+    gradient: string;
+    createdAt: string;
+    totalInvestment: number;  // ✅ NEW
+    investmentHistory: InvestmentEntry[];  // ✅ NEW
+}
+
+export interface InvestmentEntry {
+    id: number;
+    amount: number;
+    date: string;
+    note?:  string;
+}

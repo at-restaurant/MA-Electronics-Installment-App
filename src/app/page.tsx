@@ -1,227 +1,305 @@
-// src/app/page.tsx - HOME PAGE (Dashboard Redirect)
+'use client';
 
-"use client";
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+    Users,
+    TrendingUp,
+    AlertCircle,
+    Plus,
+    Edit2,
+    Trash2,
+    DollarSign,
+} from 'lucide-react';
+import Navigation from '@/components/Navigation';
+import GlobalHeader from '@/components/GlobalHeader';
+import { db } from '@/lib/db';
+import { useProfile } from '@/hooks/useCompact';
+import { formatCurrency } from '@/lib/utils';
+import type { Profile, InvestmentEntry } from '@/types';
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { DollarSign, Users, TrendingUp, Clock, ArrowRight, Sparkles } from "lucide-react";
-import Navigation from "@/components/Navigation";
-import GlobalHeader from "@/components/GlobalHeader";
-import { useProfile, useCompactCustomers } from "@/hooks/useCompact";
-import { formatCurrency } from "@/lib/utils";
-
-export default function HomePage() {
+export default function Dashboard() {
     const router = useRouter();
-    const { profile, loading } = useProfile();
-    const { customers, stats } = useCompactCustomers(profile?.id);
+    const { profile: currentProfile } = useProfile();
+    const [profile, setProfile] = useState<Profile | null>(null);
+    const [stats, setStats] = useState({
+        totalCustomers: 0,
+        activeCustomers: 0,
+        totalReceived: 0,
+        totalExpected: 0,
+    });
+    const [showInvestmentForm, setShowInvestmentForm] = useState(false);
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [form, setForm] = useState({ amount: '', note: '' });
 
+    useEffect(() => {
+        if (currentProfile) {
+            loadData();
+        }
+    }, [currentProfile]);
 
-    // Loading screen
-    if (loading) {
+    const loadData = async () => {
+        try {
+            const p = await db.profiles.get(currentProfile!  . id);
+            if (p) setProfile(p);
+
+            const statsData = await db.calculateStatistics(currentProfile!.id);
+            setStats({
+                totalCustomers: statsData.totalCustomers,
+                activeCustomers: statsData.activeCustomers,
+                totalReceived: statsData.totalReceived,
+                totalExpected:  statsData.totalExpected,
+            });
+        } catch (error) {
+            console.error('Failed to load data:', error);
+        }
+    };
+
+    const handleSaveInvestment = async () => {
+        if (!form.amount || !profile) {
+            alert('Enter investment amount');
+            return;
+        }
+
+        const amount = parseFloat(form.amount);
+        if (amount <= 0) {
+            alert('Enter valid amount');
+            return;
+        }
+
+        try {
+            const entry: InvestmentEntry = {
+                id: editingId || Date.now(),
+                amount,
+                date: new Date().toISOString(),
+                note: form.note,
+            };
+
+            let newHistory = [... (profile. investmentHistory || [])];
+            let newTotal = profile.totalInvestment || 0;
+
+            if (editingId) {
+                const oldEntry = newHistory.find(e => e.id === editingId);
+                if (oldEntry) {
+                    newTotal = newTotal - oldEntry.amount + amount;
+                    newHistory = newHistory.map(e => (e.id === editingId ?  entry : e));
+                }
+                setEditingId(null);
+            } else {
+                newHistory.push(entry);
+                newTotal += amount;
+            }
+
+            const updated = { ...profile, totalInvestment: newTotal, investmentHistory: newHistory };
+            await db.profiles.update(profile.id, updated);
+            setProfile(updated);
+            setForm({ amount: '', note: '' });
+            setShowInvestmentForm(false);
+        } catch (error) {
+            console.error('Failed to save investment:', error);
+            alert('Failed to save investment');
+        }
+    };
+
+    const handleDeleteInvestment = async (id: number) => {
+        if (!profile || !confirm('Delete this entry?')) return;
+
+        try {
+            const entry = profile.investmentHistory?.find(e => e.id === id);
+            if (! entry) return;
+
+            const updated = {
+                ...profile,
+                totalInvestment: (profile.totalInvestment || 0) - entry.amount,
+                investmentHistory: (profile.investmentHistory || []).filter(e => e.id !== id),
+            };
+
+            await db.profiles.update(profile. id, updated);
+            setProfile(updated);
+        } catch (error) {
+            console.error('Failed to delete investment:', error);
+            alert('Failed to delete investment');
+        }
+    };
+
+    const handleEditInvestment = (entry: InvestmentEntry) => {
+        setForm({ amount: entry.amount.toString(), note: entry.note || '' });
+        setEditingId(entry.id);
+        setShowInvestmentForm(true);
+    };
+
+    if (!profile) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Loading...</p>
-                </div>
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
             </div>
         );
     }
 
-    // Calculate stats
-    const pending = stats.expected - stats.revenue;
-    const collectionRate = stats.expected > 0
-        ? Math.round((stats.revenue / stats.expected) * 100)
-        : 0;
-
-    // Recent customers
-    const recentCustomers = customers
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 5);
-
-    // Top performers (highest paid amount)
-    const topPerformers = customers
-        .filter(c => c.paidAmount > 0)
-        .sort((a, b) => b.paidAmount - a.paidAmount)
-        .slice(0, 3);
+    const collectionRate = stats.totalExpected > 0 ? (stats.totalReceived / stats.totalExpected) * 100 : 0;
+    const totalHistory = profile.investmentHistory || [];
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
             <GlobalHeader title="Dashboard" />
 
-            <div className="pt-16 p-4 space-y-4">
-                {/* Welcome Banner */}
-                <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 rounded-2xl p-6 text-white shadow-xl">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Sparkles className="w-6 h-6" />
-                        <h2 className="text-lg font-semibold">Welcome Back!</h2>
+            <div className="pt-16 p-4 max-w-2xl mx-auto space-y-4">
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                    <div
+                        onClick={() => router.push('/customers')}
+                        className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover:shadow-md"
+                    >
+                        <div className="flex items-center gap-2 mb-2">
+                            <Users className="w-5 h-5 text-blue-600" />
+                            <p className="text-xs text-gray-600">Customers</p>
+                        </div>
+                        <p className="text-2xl font-bold text-blue-600">{stats.totalCustomers}</p>
+                        <p className="text-xs text-gray-500 mt-1">{stats.activeCustomers} active</p>
                     </div>
-                    <p className="text-white/90 text-sm mb-4">
-                        {profile?.name} - Your business at a glance
-                    </p>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                            <p className="text-xs opacity-90 mb-1">Active Customers</p>
-                            <p className="text-2xl font-bold">{stats.active}</p>
+
+                    <div
+                        onClick={() => router.push('/pending')}
+                        className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover: shadow-md"
+                    >
+                        <div className="flex items-center gap-2 mb-2">
+                            <AlertCircle className="w-5 h-5 text-red-600" />
+                            <p className="text-xs text-gray-600">Pending</p>
                         </div>
-                        <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                            <p className="text-xs opacity-90 mb-1">Collection Rate</p>
-                            <p className="text-2xl font-bold">{collectionRate}%</p>
+                        <p className="text-2xl font-bold text-red-600">
+                            {formatCurrency(stats.totalExpected - stats.totalReceived)}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Overdue amount</p>
+                    </div>
+
+                    <div
+                        onClick={() => router.push('/daily')}
+                        className="bg-white rounded-lg p-4 shadow-sm cursor-pointer hover: shadow-md"
+                    >
+                        <div className="flex items-center gap-2 mb-2">
+                            <TrendingUp className="w-5 h-5 text-green-600" />
+                            <p className="text-xs text-gray-600">Received</p>
                         </div>
+                        <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalReceived)}</p>
+                        <p className="text-xs text-gray-500 mt-1">{Math.round(collectionRate)}% collected</p>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                            <DollarSign className="w-5 h-5 text-purple-600" />
+                            <p className="text-xs text-gray-600">Investment</p>
+                        </div>
+                        <p className="text-2xl font-bold text-purple-600">{formatCurrency(profile.totalInvestment || 0)}</p>
+                        <p className="text-xs text-gray-500 mt-1">{totalHistory.length} entries</p>
                     </div>
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white shadow-lg">
-                        <DollarSign className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Total Received</p>
-                        <p className="text-2xl font-bold">{formatCurrency(stats.revenue)}</p>
-                    </div>
+                {/* Investment Section */}
+                <div className="bg-white rounded-lg p-4 shadow-sm">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <DollarSign className="w-5 h-5 text-purple-600" />
+                        Investment Tracking
+                    </h3>
 
-                    <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white shadow-lg">
-                        <Clock className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Pending</p>
-                        <p className="text-2xl font-bold">{formatCurrency(pending)}</p>
-                    </div>
+                    {! showInvestmentForm ? (
+                        <button
+                            onClick={() => {
+                                setShowInvestmentForm(true);
+                                setEditingId(null);
+                                setForm({ amount: '', note:  '' });
+                            }}
+                            className="w-full py-2 bg-purple-50 text-purple-600 rounded-lg font-medium hover:bg-purple-100 flex items-center justify-center gap-2 text-sm mb-3"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Investment
+                        </button>
+                    ) : (
+                        <div className="space-y-2 mb-3">
+                            <input
+                                type="number"
+                                placeholder="Amount (₨)"
+                                value={form.amount}
+                                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                autoFocus
+                            />
+                            <textarea
+                                placeholder="Note (purpose, details... )"
+                                value={form.note}
+                                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                                rows={2}
+                                className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleSaveInvestment}
+                                    className="flex-1 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 text-sm"
+                                >
+                                    Save
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowInvestmentForm(false);
+                                        setEditingId(null);
+                                        setForm({ amount: '', note:  '' });
+                                    }}
+                                    className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
-                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white shadow-lg">
-                        <Users className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Total Customers</p>
-                        <p className="text-2xl font-bold">{stats.total}</p>
-                    </div>
-
-                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg">
-                        <TrendingUp className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Collection Rate</p>
-                        <p className="text-2xl font-bold">{collectionRate}%</p>
-                    </div>
+                    {/* Recent Investments */}
+                    {totalHistory.length > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-xs text-gray-600 font-semibold">Recent Entries</p>
+                            {totalHistory
+                                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                .slice(0, 3)
+                                .map((entry) => (
+                                    <div key={entry.id} className="flex justify-between items-start bg-gray-50 rounded p-2 text-xs">
+                                        <div className="flex-1">
+                                            <p className="font-bold text-purple-600">{formatCurrency(entry.amount)}</p>
+                                            {entry.note && <p className="text-gray-600 mt-1">{entry. note}</p>}
+                                        </div>
+                                        <div className="flex gap-1 ml-2">
+                                            <button
+                                                onClick={() => handleEditInvestment(entry)}
+                                                className="p-1 text-blue-500 hover:bg-blue-50 rounded"
+                                            >
+                                                <Edit2 className="w-3 h-3" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteInvestment(entry.id)}
+                                                className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Quick Actions */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-blue-600" />
-                        Quick Actions
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3">
-                        <button
-                            onClick={() => router.push('/customers/add')}
-                            className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 text-left hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200"
-                        >
-                            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center mb-2">
-                                <Users className="w-5 h-5 text-white" />
-                            </div>
-                            <p className="font-semibold text-sm text-blue-900">Add Customer</p>
-                            <p className="text-xs text-blue-700 mt-1">Create new account</p>
-                        </button>
-
-                        <button
-                            onClick={() => router.push('/daily')}
-                            className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 text-left hover:from-green-100 hover:to-green-200 transition-all border border-green-200"
-                        >
-                            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center mb-2">
-                                <DollarSign className="w-5 h-5 text-white" />
-                            </div>
-                            <p className="font-semibold text-sm text-green-900">Daily Collection</p>
-                            <p className="text-xs text-green-700 mt-1">Mark payments</p>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Top Performers */}
-                {topPerformers.length > 0 && (
-                    <div className="bg-white rounded-2xl p-4 shadow-sm">
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold flex items-center gap-2">
-                                <TrendingUp className="w-5 h-5 text-green-600" />
-                                Top Performers
-                            </h3>
-                        </div>
-                        <div className="space-y-3">
-                            {topPerformers.map((customer, index) => (
-                                <div
-                                    key={customer.id}
-                                    onClick={() => router.push(`/customers/${customer.id}`)}
-                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                                >
-                                    <div className="flex-shrink-0">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                                            index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : 'bg-orange-500'
-                                        }`}>
-                                            {index + 1}
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-sm truncate">{customer.name}</p>
-                                        <p className="text-xs text-gray-500">
-                                            {Math.round((customer.paidAmount / customer.totalAmount) * 100)}% complete
-                                        </p>
-                                    </div>
-                                    <p className="font-bold text-green-600 text-sm">
-                                        {formatCurrency(customer.paidAmount)}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Recent Customers */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold">Recent Customers</h3>
-                        <button
-                            onClick={() => router.push('/customers')}
-                            className="text-blue-600 text-sm font-medium flex items-center gap-1 hover:gap-2 transition-all"
-                        >
-                            View All
-                            <ArrowRight className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    <div className="space-y-3">
-                        {recentCustomers.length === 0 ? (
-                            <div className="text-center py-8">
-                                <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                                <p className="text-gray-500 text-sm mb-3">No customers yet</p>
-                                <button
-                                    onClick={() => router.push('/customers/add')}
-                                    className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                                >
-                                    Add Your First Customer
-                                </button>
-                            </div>
-                        ) : (
-                            recentCustomers.map(customer => (
-                                <div
-                                    key={customer.id}
-                                    onClick={() => router.push(`/customers/${customer.id}`)}
-                                    className="flex items-center justify-between py-3 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg px-2 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
-                                            {customer.photo ? (
-                                                <img src={customer.photo} alt={customer.name} className="w-full h-full object-cover" />
-                                            ) : (
-                                                customer.name.charAt(0)
-                                            )}
-                                        </div>
-                                        <div>
-                                            <p className="font-medium text-sm">{customer.name}</p>
-                                            <p className="text-xs text-gray-500">{customer.phone}</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-semibold text-green-600 text-sm">
-                                            {formatCurrency(customer.installmentAmount)}
-                                        </p>
-                                        <p className="text-xs text-gray-500 capitalize">{customer.frequency}</p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <button
+                        onClick={() => router.push('/customers/add')}
+                        className="bg-blue-600 text-white rounded-lg p-3 font-medium hover:bg-blue-700 flex items-center justify-center gap-2 text-sm"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add Customer
+                    </button>
+                    <button
+                        onClick={() => router.push('/daily')}
+                        className="bg-green-600 text-white rounded-lg p-3 font-medium hover:bg-green-700 flex items-center justify-center gap-2 text-sm"
+                    >
+                        <TrendingUp className="w-4 h-4" />
+                        Record Payment
+                    </button>
                 </div>
             </div>
 
