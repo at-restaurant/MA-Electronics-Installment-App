@@ -1,3 +1,5 @@
+// src/app/customers/[id]/page.tsx - COMPLETE WITH PENDING TRANSACTIONS
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -5,7 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import {
     Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
     DollarSign, History, FileText, CheckCircle, X, UserCheck,
-    Image as ImageIcon
+    Image as ImageIcon, Clock
 } from 'lucide-react';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -124,7 +126,28 @@ export default function CustomerDetailPage() {
         }
     };
 
-    // NOTE: Auto WhatsApp toggle removed as requested
+    // ✅ GENERATE PENDING TRANSACTIONS
+    const generatePendingTransactions = () => {
+        if (!customer || customer.status !== 'active') return [];
+
+        const today = new Date();
+        const lastPaymentDate = new Date(customer.lastPayment);
+        const pendingDays: string[] = [];
+
+        // Calculate days to add based on frequency
+        const daysToAdd = customer.frequency === 'daily' ? 1 : customer.frequency === 'weekly' ? 7 : 30;
+
+        let currentDate = new Date(lastPaymentDate);
+        currentDate.setDate(currentDate.getDate() + daysToAdd);
+
+        // Generate all pending dates from last payment to today
+        while (currentDate <= today) {
+            pendingDays.push(currentDate.toISOString().split('T')[0]);
+            currentDate.setDate(currentDate.getDate() + daysToAdd);
+        }
+
+        return pendingDays;
+    };
 
     if (loading || !customer || !profile) {
         return (
@@ -141,6 +164,7 @@ export default function CustomerDetailPage() {
     const remaining = customer.totalAmount - customer.paidAmount;
     const isCompleted = progress >= 100;
     const daysOverdue = calculateDaysOverdue(customer.lastPayment);
+    const pendingTransactions = generatePendingTransactions();
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
@@ -277,7 +301,7 @@ export default function CustomerDetailPage() {
                     />
                 </div>
 
-                {/* ✅ GUARANTORS - VIEW ONLY (Edit pe click karne par edit page khul jayega) */}
+                {/* Guarantors */}
                 {customer.guarantors && customer.guarantors.length > 0 && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -291,7 +315,6 @@ export default function CustomerDetailPage() {
                                     className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200"
                                 >
                                     <div className="flex items-start gap-3">
-                                        {/* Photos */}
                                         <div className="flex gap-2 flex-shrink-0">
                                             {g.photos && g.photos.length > 0 ? (
                                                 <>
@@ -316,7 +339,6 @@ export default function CustomerDetailPage() {
                                             )}
                                         </div>
 
-                                        {/* Info */}
                                         <div className="flex-1 min-w-0">
                                             <p className="font-semibold text-base truncate">{g.name}</p>
                                             <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
@@ -374,18 +396,63 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* Payment History */}
+                {/* ✅ PAYMENT HISTORY WITH PENDING TRANSACTIONS */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                         <History className="w-5 h-5 text-blue-600" />
-                        Payment History ({payments.length})
+                        Payment History ({payments.length + pendingTransactions.length})
                     </h3>
-                    {payments.length === 0 ? (
+                    {payments.length === 0 && pendingTransactions.length === 0 ? (
                         <p className="text-center text-gray-500 py-8">No payments yet</p>
                     ) : (
                         <div className="space-y-3">
+                            {/* ✅ PENDING TRANSACTIONS */}
+                            {pendingTransactions.map(pendingDate => {
+                                const daysOverdueForThis = Math.floor(
+                                    (new Date().getTime() - new Date(pendingDate).getTime()) / (1000 * 60 * 60 * 24)
+                                );
+                                return (
+                                    <div
+                                        key={`pending-${pendingDate}`}
+                                        className="flex items-center justify-between py-3 border-2 border-orange-200 bg-orange-50 rounded-lg px-3"
+                                    >
+                                        <div className="flex items-center gap-3 flex-1">
+                                            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                                                <Clock className="w-5 h-5 text-orange-600" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs font-medium">
+                                                        Pending
+                                                    </span>
+                                                    <p className="text-xs text-orange-700 font-medium">
+                                                        {daysOverdueForThis} days overdue
+                                                    </p>
+                                                </div>
+                                                <p className="text-sm font-medium text-gray-700">{formatDate(pendingDate)}</p>
+                                                <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                                                    {customer.frequency} installment expected
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 ml-3">
+                                            <p className="font-bold text-orange-600">{formatCurrency(customer.installmentAmount)}</p>
+                                            <button
+                                                onClick={() => {
+                                                    paymentModal.show();
+                                                }}
+                                                className="px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-xs font-medium whitespace-nowrap"
+                                            >
+                                                Pay Now
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {/* ✅ COMPLETED PAYMENTS */}
                             {payments.map(payment => (
-                                <div key={payment.id} className="flex items-center justify-between py-3 border-b last:border-0">
+                                <div key={payment.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
                                     <div className="flex items-center gap-3 flex-1">
                                         <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                                             <CheckCircle className="w-5 h-5 text-green-600" />

@@ -1,4 +1,4 @@
-// src/types/index.ts - Production Ready with New Fields
+// src/types/index.ts - UPDATED WITH INVESTMENT TYPES
 
 export interface Profile {
     id: number;
@@ -6,6 +6,17 @@ export interface Profile {
     description: string;
     gradient: string;
     createdAt: string;
+    totalInvestment: number;
+    investmentHistory: InvestmentEntry[];
+}
+
+export interface InvestmentEntry {
+    id: number;
+    amount: number;
+    date: string;
+    note?: string;
+    type: 'INVESTED' | 'RECEIVED'; // ✅ ADDED
+    customerId?: number; // ✅ ADDED
 }
 
 export interface Guarantor {
@@ -13,22 +24,22 @@ export interface Guarantor {
     name: string;
     phone: string;
     cnic: string;
-    photos: string[]; // Multiple photos (required)
-    photo?: string | null; // Single photo (backward compatibility)
+    photos: string[];
+    photo?: string | null;
     relation?: string;
 }
 
 export interface Customer {
-    id:  number;
+    id: number;
     profileId: number;
     name: string;
     phone: string;
     address: string;
     cnic: string;
-    photo:  string | null;
+    photo: string | null;
     cnicPhotos: string[];
-    cnicPhoto?:  string | null;
-    document:  string | null;
+    cnicPhoto?: string | null;
+    document: string | null;
     totalAmount: number;
     installmentAmount: number;
     frequency: 'daily' | 'weekly' | 'monthly';
@@ -40,8 +51,8 @@ export interface Customer {
     status: 'active' | 'completed';
     createdAt: string;
     autoMessaging: boolean;
-    guarantors:  Guarantor[];
-    category?:  string;
+    guarantors: Guarantor[];
+    category?: string;
     tags?: string[];
     autoSchedule?: boolean;
 }
@@ -71,8 +82,8 @@ export interface AppSettings {
     notifications: NotificationSettings;
     language: 'en' | 'ur';
     currency: 'PKR';
-    defaultCategory?:  string;
-    categories?:  string[];
+    defaultCategory?: string;
+    categories?: string[];
 }
 
 export interface Statistics {
@@ -83,35 +94,18 @@ export interface Statistics {
     completedCustomers: number;
     overdueCustomers: number;
     collectionRate: number;
-    totalInvestment?:  number;
-    onlinePayments?:  number;
+    totalInvestment?: number;
+    onlinePayments?: number;
     offlinePayments?: number;
 }
 
 export interface WhatsAppQueue {
-    id?:  number;
+    id?: number;
     phone: string;
     message: string;
     customerId: number;
     type: 'welcome' | 'payment' | 'reminder' | 'overdue' | 'completion';
     attempts: number;
     scheduledFor?: string;
-    createdAt?:  string;
-}
-
-export interface Profile {
-    id: number;
-    name: string;
-    description: string;
-    gradient: string;
-    createdAt: string;
-    totalInvestment: number;  // ✅ NEW
-    investmentHistory: InvestmentEntry[];  // ✅ NEW
-}
-
-export interface InvestmentEntry {
-    id: number;
-    amount: number;
-    date: string;
-    note?:  string;
+    createdAt?: string;
 }
