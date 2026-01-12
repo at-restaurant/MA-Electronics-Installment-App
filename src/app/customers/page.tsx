@@ -22,9 +22,9 @@ export default function CustomersPage() {
 
     // Filter options for FilterBar
     const filterOptions = [
-        { id: 'all', label: 'All', count: stats.total },
         { id: 'active', label: 'Active', count: stats.active },
         { id: 'completed', label: 'Completed', count: stats.completed },
+        { id: 'all', label: 'All', count: stats.total },
     ];
 
     if (!profile) {

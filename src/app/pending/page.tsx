@@ -1,3 +1,5 @@
+// src/app/pending/page.tsx - FIXED WITH FREQUENCY AWARENESS
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,7 +9,7 @@ import Navigation from '@/components/Navigation';
 import GlobalHeader from '@/components/GlobalHeader';
 import { db } from '@/lib/db';
 import { useProfile } from '@/hooks/useCompact';
-import { formatCurrency, formatDate, calculateDaysOverdue } from '@/lib/utils';
+import { formatCurrency, formatDate, calculateDaysOverdue, getTimeUntilDue } from '@/lib/utils';
 import type { Customer } from '@/types';
 
 type OverdueType = 'overdue_7' | 'overdue_14' | 'overdue_30' | 'overdue_30_plus';
@@ -28,30 +30,36 @@ export default function PendingPage() {
     }, [pending, filter]);
 
     const loadPending = async () => {
-        const active = await db.getActiveCustomersByProfile(profile! .id);
-        const overdue = active.filter((c) => calculateDaysOverdue(c.lastPayment) > 0);
-        setPending(overdue. sort((a, b) => calculateDaysOverdue(b.lastPayment) - calculateDaysOverdue(a.lastPayment)));
+        const active = await db.getActiveCustomersByProfile(profile!.id);
+
+        // ✅ FIXED: Filter using frequency-aware calculation
+        const overdue = active.filter((c) => {
+            const daysOverdue = calculateDaysOverdue(c.lastPayment, c.frequency);
+            return daysOverdue > 0; // Only show if actually overdue after grace period
+        });
+
+        // Sort by overdue amount (most overdue first)
+        setPending(
+            overdue.sort((a, b) =>
+                calculateDaysOverdue(b.lastPayment, b.frequency) -
+                calculateDaysOverdue(a.lastPayment, a.frequency)
+            )
+        );
     };
 
     const applyFilter = () => {
         if (filter === 'all') {
             setFiltered(pending);
         } else {
-            const days = {
-                overdue_7: 7,
-                overdue_14: 14,
-                overdue_30: 30,
-                overdue_30_plus:  Infinity,
-            };
-            const minDays = filter === 'overdue_30_plus' ? 31 : Object.values(days)[Object.keys(days).indexOf(filter)];
-            const maxDays = filter === 'overdue_30_plus' ?  Infinity : minDays;
-
             setFiltered(
                 pending.filter((c) => {
-                    const d = calculateDaysOverdue(c.lastPayment);
-                    return filter === 'overdue_7' ? d <= 7 :
-                        filter === 'overdue_14' ? d > 7 && d <= 14 :
-                            filter === 'overdue_30' ? d > 14 && d <= 30 :  d > 30;
+                    const d = calculateDaysOverdue(c.lastPayment, c.frequency);
+
+                    // Filter based on actual overdue days (after grace period)
+                    if (filter === 'overdue_7') return d > 0 && d <= 7;
+                    if (filter === 'overdue_14') return d > 7 && d <= 14;
+                    if (filter === 'overdue_30') return d > 14 && d <= 30;
+                    return d > 30; // overdue_30_plus
                 })
             );
         }
@@ -104,7 +112,7 @@ export default function PendingPage() {
                             onClick={() => setFilter(opt.value as any)}
                             className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
                                 filter === opt.value
-                                    ?  'bg-red-600 text-white'
+                                    ? 'bg-red-600 text-white'
                                     : 'bg-white text-gray-700 border hover:bg-gray-50'
                             }`}
                         >
@@ -117,13 +125,20 @@ export default function PendingPage() {
                 {filtered.length === 0 ? (
                     <div className="bg-white rounded-lg p-8 text-center shadow-sm">
                         <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                        <p className="text-gray-600">No pending payments</p>
+                        <p className="text-gray-600">
+                            {pending.length === 0
+                                ? 'No pending payments! 🎉'
+                                : 'No customers in this range'}
+                        </p>
                     </div>
                 ) : (
                     <div className="space-y-2">
                         {filtered.map((c) => {
-                            const days = calculateDaysOverdue(c.lastPayment);
+                            // ✅ Use frequency-aware calculation
+                            const days = calculateDaysOverdue(c.lastPayment, c.frequency);
                             const remaining = c.totalAmount - c.paidAmount;
+                            const timeStatus = getTimeUntilDue(c.lastPayment, c.frequency);
+
                             return (
                                 <div
                                     key={c.id}
@@ -134,19 +149,29 @@ export default function PendingPage() {
                                         <span className="text-xl">{getIcon(days)}</span>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex justify-between items-start mb-1">
-                                                <h3 className="font-semibold truncate">{c.name}</h3>
-                                                <span className="text-xs font-bold px-2 py-0.5 bg-white/50 rounded whitespace-nowrap">
-                          {days}d overdue
-                        </span>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="font-semibold truncate">{c.name}</h3>
+                                                    <p className="text-xs text-purple-600 font-medium capitalize">
+                                                        {c.frequency} installment
+                                                    </p>
+                                                </div>
+                                                <div className="text-right ml-2">
+                                                    <span className="text-xs font-bold px-2 py-0.5 bg-white/50 rounded whitespace-nowrap block">
+                                                        {days}d overdue
+                                                    </span>
+                                                    <span className="text-xs text-gray-500 mt-1 block">
+                                                        {timeStatus}
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div className="text-xs text-gray-600 flex gap-4 mb-2">
-                        <span className="flex items-center gap-1">
-                          <Phone className="w-3 h-3" /> {c.phone}
-                        </span>
+                                                <span className="flex items-center gap-1">
+                                                    <Phone className="w-3 h-3" /> {c.phone}
+                                                </span>
                                                 {c.address && (
                                                     <span className="flex items-center gap-1 truncate">
-                            <MapPin className="w-3 h-3" /> {c.address}
-                          </span>
+                                                        <MapPin className="w-3 h-3" /> {c.address}
+                                                    </span>
                                                 )}
                                             </div>
                                             <div className="grid grid-cols-3 gap-2 text-xs">
