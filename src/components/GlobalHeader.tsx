@@ -1,14 +1,16 @@
+// src/components/GlobalHeader.tsx - WITH LONG PRESS DELETE
+
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Menu, Plus } from 'lucide-react';
+import { ChevronDown, Menu, Plus, Trash2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Profile } from '@/types';
 
 interface GlobalHeaderProps {
-    title? :  string;
-    showProfileSwitcher?:  boolean;
+    title?: string;
+    showProfileSwitcher?: boolean;
     showMenu?: boolean;
     rightAction?: React.ReactNode;
 }
@@ -26,6 +28,12 @@ export default function GlobalHeader({
     const [showAddForm, setShowAddForm] = useState(false);
     const [newProfile, setNewProfile] = useState({ name: '', description: '', gradient: 'from-blue-500 to-purple-500' });
 
+    // ✅ Long Press States
+    const [longPressProfile, setLongPressProfile] = useState<number | null>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [profileToDelete, setProfileToDelete] = useState<Profile | null>(null);
+    const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+
     useEffect(() => {
         loadData();
     }, []);
@@ -40,7 +48,7 @@ export default function GlobalHeader({
             const all = await db.profiles.toArray();
             setProfiles(all);
 
-            if (! current && all.length > 0) {
+            if (!current && all.length > 0) {
                 setProfile(all[0]);
                 await db.setMeta('currentProfile', all[0]);
             }
@@ -90,6 +98,88 @@ export default function GlobalHeader({
         }
     };
 
+    // ✅ Long Press Handlers
+    const handleLongPressStart = (p: Profile) => {
+        // Don't allow delete if it's the only profile or current profile
+        if (profiles.length === 1) {
+            return;
+        }
+
+        if (p.id === profile?.id) {
+            alert('❌ Cannot delete current profile. Switch to another profile first.');
+            return;
+        }
+
+        longPressTimer.current = setTimeout(() => {
+            setLongPressProfile(p.id);
+            setProfileToDelete(p);
+            setShowDeleteConfirm(true);
+
+            // Vibrate if supported
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }, 800); // 800ms long press
+    };
+
+    const handleLongPressEnd = () => {
+        if (longPressTimer.current) {
+            clearTimeout(longPressTimer.current);
+            longPressTimer.current = null;
+        }
+        setLongPressProfile(null);
+    };
+
+    const handleDeleteProfile = async () => {
+        if (!profileToDelete) return;
+
+        try {
+            // Get all customers for this profile
+            const customers = await db.getCustomersByProfile(profileToDelete.id);
+            const payments = await db.getPaymentsByProfile(profileToDelete.id);
+
+            const confirmMessage = customers.length > 0
+                ? `⚠️ Warning!\n\nThis will delete:\n- Profile: ${profileToDelete.name}\n- ${customers.length} customers\n- ${payments.length} payments\n\nThis action CANNOT be undone!\n\nAre you sure?`
+                : `Delete profile "${profileToDelete.name}"?`;
+
+            if (!confirm(confirmMessage)) {
+                setShowDeleteConfirm(false);
+                setProfileToDelete(null);
+                return;
+            }
+
+            // Delete all related data
+            await db.transaction('rw', db.customers, db.payments, db.profiles, async () => {
+                // Delete customers
+                const customerIds = customers.map(c => c.id);
+                if (customerIds.length > 0) {
+                    await db.customers.bulkDelete(customerIds);
+                }
+
+                // Delete payments
+                const paymentIds = payments.map(p => p.id);
+                if (paymentIds.length > 0) {
+                    await db.payments.bulkDelete(paymentIds);
+                }
+
+                // Delete profile
+                await db.profiles.delete(profileToDelete.id);
+            });
+
+            // Reload profiles
+            await loadData();
+
+            setShowDeleteConfirm(false);
+            setProfileToDelete(null);
+            setShowDropdown(false);
+
+            alert('✅ Profile deleted successfully!');
+        } catch (error) {
+            console.error('Failed to delete profile:', error);
+            alert('❌ Failed to delete profile');
+        }
+    };
+
     const getGradient = (gradient: string) => {
         return `bg-gradient-to-br ${gradient}`;
     };
@@ -104,155 +194,242 @@ export default function GlobalHeader({
     ];
 
     return (
-        <header className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-40">
-            <div className="flex items-center justify-between px-4 py-3">
-                {/* Left:  Title or Menu */}
-                <div className="flex items-center gap-3">
-                    {showMenu && (
-                        <button className="p-2 hover:bg-gray-100 rounded-lg">
-                            <Menu className="w-5 h-5" />
-                        </button>
-                    )}
-                    {title && <h1 className="text-lg font-bold">{title}</h1>}
-                </div>
+        <>
+            <header className="fixed top-0 left-0 right-0 bg-white border-b border-gray-200 z-40">
+                <div className="flex items-center justify-between px-4 py-3">
+                    {/* Left: Title or Menu */}
+                    <div className="flex items-center gap-3">
+                        {showMenu && (
+                            <button className="p-2 hover:bg-gray-100 rounded-lg">
+                                <Menu className="w-5 h-5" />
+                            </button>
+                        )}
+                        {title && <h1 className="text-lg font-bold">{title}</h1>}
+                    </div>
 
-                {/* Center: Profile Switcher */}
-                {showProfileSwitcher && profile && (
-                    <div className="relative">
-                        <button
-                            onClick={() => setShowDropdown(!showDropdown)}
-                            className="flex items-center gap-2 px-3 py-1. 5 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                            <div
-                                className={`w-6 h-6 rounded-full ${getGradient(
-                                    profile.gradient
-                                )} flex items-center justify-center text-white text-xs font-bold`}
+                    {/* Center: Profile Switcher */}
+                    {showProfileSwitcher && profile && (
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowDropdown(!showDropdown)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                {profile.name[0]}
-                            </div>
-                            <span className="font-medium text-sm max-w-[120px] truncate">
-                {profile.name}
-              </span>
-                            <ChevronDown
-                                className={`w-4 h-4 transition-transform ${
-                                    showDropdown ? 'rotate-180' : ''
-                                }`}
-                            />
-                        </button>
-
-                        {/* Dropdown */}
-                        {showDropdown && (
-                            <>
                                 <div
-                                    className="fixed inset-0 z-40"
-                                    onClick={() => setShowDropdown(false)}
+                                    className={`w-6 h-6 rounded-full ${getGradient(
+                                        profile.gradient
+                                    )} flex items-center justify-center text-white text-xs font-bold`}
+                                >
+                                    {profile.name[0]}
+                                </div>
+                                <span className="font-medium text-sm max-w-[120px] truncate">
+                                    {profile.name}
+                                </span>
+                                <ChevronDown
+                                    className={`w-4 h-4 transition-transform ${
+                                        showDropdown ? 'rotate-180' : ''
+                                    }`}
                                 />
-                                <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden max-h-96 overflow-y-auto">
-                                    {/* Existing Profiles */}
-                                    {profiles.map((p) => (
-                                        <button
-                                            key={p.id}
-                                            onClick={() => switchProfile(p)}
-                                            className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors ${
-                                                p. id === profile.id ?  'bg-blue-50' : ''
-                                            }`}
-                                        >
-                                            <div
-                                                className={`w-8 h-8 rounded-full ${getGradient(
-                                                    p.gradient
-                                                )} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}
-                                            >
-                                                {p.name[0]}
-                                            </div>
-                                            <div className="flex-1 text-left min-w-0">
-                                                <p
-                                                    className={`font-medium text-sm truncate ${
-                                                        p.id === profile.id ? 'text-blue-600' : ''
-                                                    }`}
-                                                >
-                                                    {p. name}
-                                                </p>
-                                                <p className="text-xs text-gray-500 truncate">{p.description}</p>
-                                            </div>
-                                            {p.id === profile.id && (
-                                                <div className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0" />
-                                            )}
-                                        </button>
-                                    ))}
+                            </button>
 
-                                    <div className="border-t border-gray-200">
-                                        {! showAddForm ? (
-                                            <button
-                                                onClick={() => setShowAddForm(true)}
-                                                className="w-full px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 transition-colors text-left font-medium flex items-center gap-2"
-                                            >
-                                                <Plus className="w-4 h-4" />
-                                                Add Profile
-                                            </button>
-                                        ) : (
-                                            <div className="p-4 space-y-3">
-                                                <input
-                                                    type="text"
-                                                    placeholder="Profile Name"
-                                                    value={newProfile.name}
-                                                    onChange={(e) => setNewProfile({ ...newProfile, name: e. target.value })}
-                                                    className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    autoFocus
-                                                />
-                                                <textarea
-                                                    placeholder="Description (optional)"
-                                                    value={newProfile.description}
-                                                    onChange={(e) => setNewProfile({ ...newProfile, description: e. target.value })}
-                                                    rows={2}
-                                                    className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                />
-                                                <div>
-                                                    <p className="text-xs font-medium mb-2">Color Theme</p>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        {gradientOptions. map((opt) => (
-                                                            <button
-                                                                key={opt.value}
-                                                                onClick={() => setNewProfile({ ...newProfile, gradient: opt.value })}
-                                                                className={`p-3 rounded-lg border-2 transition-all ${
-                                                                    newProfile. gradient === opt.value
-                                                                        ? 'border-blue-600'
-                                                                        : 'border-gray-200'
-                                                                }`}
-                                                            >
-                                                                <div
-                                                                    className={`h-6 rounded-full ${getGradient(opt.value)}`}
-                                                                />
-                                                                <p className="text-xs mt-1">{opt.label}</p>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={handleAddProfile}
-                                                        className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 text-sm"
-                                                    >
-                                                        Create
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setShowAddForm(false)}
-                                                        className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                </div>
+                            {/* Dropdown */}
+                            {showDropdown && (
+                                <>
+                                    <div
+                                        className="fixed inset-0 z-40"
+                                        onClick={() => setShowDropdown(false)}
+                                    />
+                                    <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden max-h-96 overflow-y-auto">
+                                        {/* ✅ Long Press Instructions */}
+                                        {profiles.length > 1 && (
+                                            <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                                                <p className="text-xs text-blue-700">
+                                                    💡 <strong>Tip:</strong> Long press profile to delete
+                                                </p>
                                             </div>
                                         )}
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                )}
 
-                {/* Right: Custom Action */}
-                {rightAction && <div>{rightAction}</div>}
-            </div>
-        </header>
+                                        {/* Existing Profiles */}
+                                        {profiles.map((p) => (
+                                            <button
+                                                key={p.id}
+                                                onClick={() => switchProfile(p)}
+                                                onMouseDown={() => handleLongPressStart(p)}
+                                                onMouseUp={handleLongPressEnd}
+                                                onMouseLeave={handleLongPressEnd}
+                                                onTouchStart={() => handleLongPressStart(p)}
+                                                onTouchEnd={handleLongPressEnd}
+                                                className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-all relative ${
+                                                    p.id === profile.id ? 'bg-blue-50' : ''
+                                                } ${
+                                                    longPressProfile === p.id ? 'bg-red-50 scale-95' : ''
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`w-8 h-8 rounded-full ${getGradient(
+                                                        p.gradient
+                                                    )} flex items-center justify-center text-white text-sm font-bold flex-shrink-0 ${
+                                                        longPressProfile === p.id ? 'ring-2 ring-red-500' : ''
+                                                    }`}
+                                                >
+                                                    {p.name[0]}
+                                                </div>
+                                                <div className="flex-1 text-left min-w-0">
+                                                    <p
+                                                        className={`font-medium text-sm truncate ${
+                                                            p.id === profile.id ? 'text-blue-600' : ''
+                                                        }`}
+                                                    >
+                                                        {p.name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 truncate">{p.description}</p>
+                                                </div>
+                                                {p.id === profile.id && (
+                                                    <div className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0" />
+                                                )}
+                                                {longPressProfile === p.id && (
+                                                    <Trash2 className="w-4 h-4 text-red-500 animate-pulse" />
+                                                )}
+                                            </button>
+                                        ))}
+
+                                        <div className="border-t border-gray-200">
+                                            {!showAddForm ? (
+                                                <button
+                                                    onClick={() => setShowAddForm(true)}
+                                                    className="w-full px-4 py-3 text-sm text-blue-600 hover:bg-blue-50 transition-colors text-left font-medium flex items-center gap-2"
+                                                >
+                                                    <Plus className="w-4 h-4" />
+                                                    Add Profile
+                                                </button>
+                                            ) : (
+                                                <div className="p-4 space-y-3">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Profile Name"
+                                                        value={newProfile.name}
+                                                        onChange={(e) => setNewProfile({ ...newProfile, name: e.target.value })}
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        autoFocus
+                                                    />
+                                                    <textarea
+                                                        placeholder="Description (optional)"
+                                                        value={newProfile.description}
+                                                        onChange={(e) => setNewProfile({ ...newProfile, description: e.target.value })}
+                                                        rows={2}
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <div>
+                                                        <p className="text-xs font-medium mb-2">Color Theme</p>
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {gradientOptions.map((opt) => (
+                                                                <button
+                                                                    key={opt.value}
+                                                                    onClick={() => setNewProfile({ ...newProfile, gradient: opt.value })}
+                                                                    className={`p-3 rounded-lg border-2 transition-all ${
+                                                                        newProfile.gradient === opt.value
+                                                                            ? 'border-blue-600'
+                                                                            : 'border-gray-200'
+                                                                    }`}
+                                                                >
+                                                                    <div
+                                                                        className={`h-6 rounded-full ${getGradient(opt.value)}`}
+                                                                    />
+                                                                    <p className="text-xs mt-1">{opt.label}</p>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={handleAddProfile}
+                                                            className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 text-sm"
+                                                        >
+                                                            Create
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setShowAddForm(false)}
+                                                            className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Right: Custom Action */}
+                    {rightAction && <div>{rightAction}</div>}
+                </div>
+            </header>
+
+            {/* ✅ Delete Confirmation Modal */}
+            {showDeleteConfirm && profileToDelete && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-scale-in">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Trash2 className="w-8 h-8 text-red-600" />
+                        </div>
+
+                        <h3 className="text-xl font-bold text-center mb-2">
+                            Delete Profile?
+                        </h3>
+
+                        <div className="mb-4">
+                            <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                                <p className="text-sm font-medium text-gray-700 mb-1">
+                                    {profileToDelete.name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    {profileToDelete.description}
+                                </p>
+                            </div>
+
+                            <p className="text-sm text-gray-600 text-center">
+                                This will permanently delete this profile and all associated customers and payments.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowDeleteConfirm(false);
+                                    setProfileToDelete(null);
+                                }}
+                                className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteProfile}
+                                className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style jsx>{`
+                @keyframes scale-in {
+                    from {
+                        transform: scale(0.9);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: scale(1);
+                        opacity: 1;
+                    }
+                }
+                .animate-scale-in {
+                    animation: scale-in 0.2s ease-out;
+                }
+            `}</style>
+        </>
     );
 }

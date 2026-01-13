@@ -1,10 +1,10 @@
-// src/app/pending/page.tsx - WITH OVERDUE & MONTHLY REPORT TABS
+// src/app/pending/page.tsx - WITH TABS (OVERDUE + MONTHLY REPORT)
 
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Phone, MapPin, Calendar, MessageSquare } from 'lucide-react';
+import { AlertCircle, Phone, MapPin, MessageSquare, Filter, Calendar, CheckCircle } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import GlobalHeader from '@/components/GlobalHeader';
 import { db } from '@/lib/db';
@@ -13,14 +13,18 @@ import { formatCurrency, formatDate, calculateDaysOverdue, getTimeUntilDue } fro
 import { WhatsAppService } from '@/lib/whatsapp-unified';
 import type { Customer, Payment } from '@/types';
 
-type OverdueType = 'overdue_7' | 'overdue_14' | 'overdue_30' | 'overdue_30_plus';
-type TabType = 'overdue' | 'monthly';
+type FrequencyFilter = 'all' | 'daily' | 'weekly' | 'monthly';
+type TabType = 'overdue' | 'report';
 
-interface MonthlyCustomerReport {
+interface CycleReport {
     customer: Customer;
+    cycleNumber: number;
+    cycleStart: string;
+    cycleEnd: string;
     expected: number;
     received: number;
     missing: number;
+    completionRate: number;
     missedDates: string[];
 }
 
@@ -31,36 +35,31 @@ export default function PendingPage() {
     const [activeTab, setActiveTab] = useState<TabType>('overdue');
     const [pending, setPending] = useState<Customer[]>([]);
     const [filtered, setFiltered] = useState<Customer[]>([]);
-    const [filter, setFilter] = useState<OverdueType | 'all'>('all');
+    const [frequencyFilter, setFrequencyFilter] = useState<FrequencyFilter>('all');
 
     // Monthly Report States
-    const [selectedMonth, setSelectedMonth] = useState('');
-    const [monthlyReports, setMonthlyReports] = useState<MonthlyCustomerReport[]>([]);
-    const [monthlyTotals, setMonthlyTotals] = useState({ expected: 0, received: 0, missing: 0 });
+    const [reports, setReports] = useState<CycleReport[]>([]);
+    const [reportLoading, setReportLoading] = useState(false);
+    const [totals, setTotals] = useState({ expected: 0, received: 0, missing: 0 });
 
     useEffect(() => {
         if (profile) {
             loadPending();
-
-            // Set current month as default
-            const now = new Date();
-            setSelectedMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
         }
     }, [profile]);
 
     useEffect(() => {
         applyFilter();
-    }, [pending, filter]);
+    }, [pending, frequencyFilter, activeTab]);
 
     useEffect(() => {
-        if (selectedMonth && profile) {
-            generateMonthlyReport();
+        if (activeTab === 'report' && profile) {
+            generateReports();
         }
-    }, [selectedMonth, profile]);
+    }, [activeTab, profile, frequencyFilter]);
 
     const loadPending = async () => {
         const active = await db.getActiveCustomersByProfile(profile!.id);
-
         const overdue = active.filter((c) => {
             const daysOverdue = calculateDaysOverdue(c.lastPayment, c.frequency);
             return daysOverdue > 0;
@@ -75,112 +74,179 @@ export default function PendingPage() {
     };
 
     const applyFilter = () => {
-        if (filter === 'all') {
+        if (frequencyFilter === 'all') {
             setFiltered(pending);
         } else {
-            setFiltered(
-                pending.filter((c) => {
-                    const d = calculateDaysOverdue(c.lastPayment, c.frequency);
-
-                    if (filter === 'overdue_7') return d > 0 && d <= 7;
-                    if (filter === 'overdue_14') return d > 7 && d <= 14;
-                    if (filter === 'overdue_30') return d > 14 && d <= 30;
-                    return d > 30;
-                })
-            );
+            setFiltered(pending.filter(c => c.frequency === frequencyFilter));
         }
     };
 
-    const generateMonthlyReport = async () => {
-        const [year, month] = selectedMonth.split('-').map(Number);
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
-        const today = new Date();
-
-        // Check if selected month is in future
-        const isFutureMonth = startDate > today;
+    const generateReports = async () => {
+        setReportLoading(true);
 
         const allCustomers = await db.getCustomersByProfile(profile!.id);
         const allPayments = await db.getPaymentsByProfile(profile!.id);
 
-        const reports: MonthlyCustomerReport[] = [];
-        let totalExpected = 0;
-        let totalReceived = 0;
-        let totalMissing = 0;
+        const filteredCustomers = frequencyFilter === 'all'
+            ? allCustomers
+            : allCustomers.filter(c => c.frequency === frequencyFilter);
 
-        for (const customer of allCustomers) {
-            // Calculate expected installments for this month
-            let expected = 0;
-            let installmentCount = 0;
+        const today = new Date();
+        const cycleReports: CycleReport[] = [];
 
-            const customerStartDate = new Date(customer.startDate);
-            const effectiveStart = customerStartDate > startDate ? customerStartDate : startDate;
+        for (const customer of filteredCustomers) {
+            const startDate = new Date(customer.startDate);
+            const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+            const completedCycles = Math.floor(daysSinceStart / 30);
+
+            if (completedCycles === 0) continue;
+
+            const cycleStart = new Date(startDate);
+            cycleStart.setDate(cycleStart.getDate() + ((completedCycles - 1) * 30));
+
+            const cycleEnd = new Date(cycleStart);
+            cycleEnd.setDate(cycleEnd.getDate() + 29);
+
+            const cycleStartStr = cycleStart.toISOString().split('T')[0];
+            const cycleEndStr = cycleEnd.toISOString().split('T')[0];
+
+            let expectedInstallments = 0;
 
             if (customer.frequency === 'daily') {
-                const daysInMonth = Math.ceil((endDate.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                installmentCount = Math.max(0, daysInMonth);
+                expectedInstallments = 30;
             } else if (customer.frequency === 'weekly') {
-                const weeksInMonth = Math.ceil((endDate.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24 * 7));
-                installmentCount = Math.max(0, weeksInMonth);
-            } else {
-                installmentCount = 1;
+                expectedInstallments = Math.floor(30 / 7);
+            } else if (customer.frequency === 'monthly') {
+                expectedInstallments = 1;
             }
 
-            expected = installmentCount * customer.installmentAmount;
+            const expected = expectedInstallments * customer.installmentAmount;
 
-            // Calculate received in this month
             const received = allPayments
-                .filter(p => {
-                    if (p.customerId !== customer.id) return false;
-                    const paymentDate = new Date(p.date);
-                    return paymentDate >= startDate && paymentDate <= endDate;
-                })
+                .filter(p =>
+                    p.customerId === customer.id &&
+                    p.date >= cycleStartStr &&
+                    p.date <= cycleEndStr &&
+                    !p.isAdvanced
+                )
                 .reduce((sum, p) => sum + p.amount, 0);
 
             const missing = Math.max(0, expected - received);
+            const completionRate = expected > 0 ? Math.round((received / expected) * 100) : 0;
 
-            // Generate missed dates
             const missedDates: string[] = [];
             if (missing > 0) {
-                const lastPaymentDate = new Date(customer.lastPayment);
-                let currentDate = new Date(lastPaymentDate);
+                const paymentsInCycle = allPayments
+                    .filter(p => p.customerId === customer.id && p.date >= cycleStartStr && p.date <= cycleEndStr)
+                    .map(p => p.date);
 
-                const daysToAdd = customer.frequency === 'daily' ? 1 : customer.frequency === 'weekly' ? 7 : 30;
-                currentDate.setDate(currentDate.getDate() + daysToAdd);
+                let currentDate = new Date(cycleStart);
 
-                while (currentDate <= endDate && currentDate <= new Date()) {
-                    if (currentDate >= startDate) {
-                        missedDates.push(currentDate.toISOString().split('T')[0]);
+                for (let i = 0; i < expectedInstallments; i++) {
+                    const expectedDate = new Date(currentDate);
+
+                    if (customer.frequency === 'daily') {
+                        expectedDate.setDate(currentDate.getDate() + i);
+                    } else if (customer.frequency === 'weekly') {
+                        expectedDate.setDate(currentDate.getDate() + (i * 7));
                     }
-                    currentDate.setDate(currentDate.getDate() + daysToAdd);
+
+                    if (expectedDate <= cycleEnd) {
+                        const dateStr = expectedDate.toISOString().split('T')[0];
+                        const hasPayment = paymentsInCycle.some(pd => {
+                            if (customer.frequency === 'daily') {
+                                return pd === dateStr;
+                            } else if (customer.frequency === 'weekly') {
+                                const weekStart = new Date(expectedDate);
+                                const weekEnd = new Date(expectedDate);
+                                weekEnd.setDate(weekEnd.getDate() + 6);
+                                const payDate = new Date(pd);
+                                return payDate >= weekStart && payDate <= weekEnd;
+                            } else {
+                                return true;
+                            }
+                        });
+
+                        if (!hasPayment) {
+                            missedDates.push(dateStr);
+                        }
+                    }
                 }
             }
 
-            if (expected > 0) {
-                reports.push({
-                    customer,
-                    expected,
-                    received,
-                    missing,
-                    missedDates
-                });
-
-                totalExpected += expected;
-                totalReceived += received;
-                totalMissing += missing;
-            }
+            cycleReports.push({
+                customer,
+                cycleNumber: completedCycles,
+                cycleStart: cycleStartStr,
+                cycleEnd: cycleEndStr,
+                expected,
+                received,
+                missing,
+                completionRate,
+                missedDates: missedDates.slice(0, 10)
+            });
         }
 
-        setMonthlyReports(reports.sort((a, b) => b.missing - a.missing));
-        setMonthlyTotals({ expected: totalExpected, received: totalReceived, missing: totalMissing });
+        cycleReports.sort((a, b) => b.missing - a.missing);
+
+        const totalExpected = cycleReports.reduce((sum, r) => sum + r.expected, 0);
+        const totalReceived = cycleReports.reduce((sum, r) => sum + r.received, 0);
+        const totalMissing = cycleReports.reduce((sum, r) => sum + r.missing, 0);
+
+        setReports(cycleReports);
+        setTotals({ expected: totalExpected, received: totalReceived, missing: totalMissing });
+        setReportLoading(false);
     };
 
-    const sendWhatsAppReminder = (customer: Customer, missedCount: number) => {
-        if (!confirm(`Send WhatsApp reminder to ${customer.name}?\n\n${missedCount} payment${missedCount > 1 ? 's' : ''} missed this month.\n\nContinue?`)) {
+    const sendReminder = (customer: Customer) => {
+        const daysOverdue = calculateDaysOverdue(customer.lastPayment, customer.frequency);
+
+        if (!confirm(
+            `Send WhatsApp reminder to ${customer.name}?\n\n` +
+            `Overdue: ${daysOverdue} days\n` +
+            `Pending: ${formatCurrency(customer.totalAmount - customer.paidAmount)}\n\n` +
+            `Continue?`
+        )) {
             return;
         }
-        WhatsAppService.sendReminder(customer);
+
+        WhatsAppService.sendOverdue(customer, daysOverdue);
         alert(`✅ Reminder sent to ${customer.name}!`);
+    };
+
+    const sendWhatsAppReport = (report: CycleReport) => {
+        if (!confirm(
+            `Send report to ${report.customer.name}?\n\n` +
+            `Cycle: ${formatDate(report.cycleStart)} - ${formatDate(report.cycleEnd)}\n` +
+            `Expected: ${formatCurrency(report.expected)}\n` +
+            `Received: ${formatCurrency(report.received)}\n` +
+            `Missing: ${formatCurrency(report.missing)}\n\n` +
+            `Continue?`
+        )) {
+            return;
+        }
+
+        const message = `
+*Assalam-o-Alaikum ${report.customer.name} Sahab!*
+
+📊 *30-Day Cycle Report*
+📅 Cycle ${report.cycleNumber}: ${formatDate(report.cycleStart)} - ${formatDate(report.cycleEnd)}
+
+💰 Expected: ${formatCurrency(report.expected)}
+✅ Received: ${formatCurrency(report.received)}
+⚠️ Missing: ${formatCurrency(report.missing)}
+📈 Completion: ${report.completionRate}%
+
+${report.missedDates.length > 0 ? `❌ Missed Dates: ${report.missedDates.length}` : ''}
+
+Mehrbani kar ke baaqi raqam jald ada karen.
+
+_MA Electronics - Aap ka Bharosa_
+        `.trim();
+
+        WhatsAppService.openWhatsApp(report.customer.phone, message);
+        alert(`✅ Report sent to ${report.customer.name}!`);
     };
 
     const getColor = (days: number) => {
@@ -215,9 +281,9 @@ export default function PendingPage() {
                         ⏰ Overdue
                     </button>
                     <button
-                        onClick={() => setActiveTab('monthly')}
+                        onClick={() => setActiveTab('report')}
                         className={`py-3 px-4 rounded-xl font-semibold transition-all ${
-                            activeTab === 'monthly'
+                            activeTab === 'report'
                                 ? 'bg-purple-600 text-white shadow-lg'
                                 : 'bg-white text-gray-700 border border-gray-200'
                         }`}
@@ -226,16 +292,16 @@ export default function PendingPage() {
                     </button>
                 </div>
 
-                {/* ===== OVERDUE TAB ===== */}
+                {/* OVERDUE TAB */}
                 {activeTab === 'overdue' && (
                     <>
                         {/* Stats */}
                         <div className="grid grid-cols-2 gap-3 mb-4">
-                            <div className="bg-white rounded p-3 shadow-sm text-center">
+                            <div className="bg-white rounded-lg p-3 shadow-sm text-center">
                                 <p className="text-xs text-gray-600">Total Pending</p>
                                 <p className="text-2xl font-bold text-red-600">{pending.length}</p>
                             </div>
-                            <div className="bg-white rounded p-3 shadow-sm text-center">
+                            <div className="bg-white rounded-lg p-3 shadow-sm text-center">
                                 <p className="text-xs text-gray-600">Total Overdue</p>
                                 <p className="text-2xl font-bold text-red-600">
                                     {formatCurrency(pending.reduce((sum, c) => sum + (c.totalAmount - c.paidAmount), 0))}
@@ -243,37 +309,52 @@ export default function PendingPage() {
                             </div>
                         </div>
 
-                        {/* Filter Buttons */}
-                        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                            {[
-                                { label: 'All', value: 'all' },
-                                { label: '1-7 Days', value: 'overdue_7' },
-                                { label: '8-14 Days', value: 'overdue_14' },
-                                { label: '15-30 Days', value: 'overdue_30' },
-                                { label: '30+ Days', value: 'overdue_30_plus' },
-                            ].map((opt) => (
-                                <button
-                                    key={opt.value}
-                                    onClick={() => setFilter(opt.value as any)}
-                                    className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
-                                        filter === opt.value
-                                            ? 'bg-red-600 text-white'
-                                            : 'bg-white text-gray-700 border hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {opt.label}
-                                </button>
-                            ))}
+                        {/* Frequency Filters */}
+                        <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
+                            <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                                <Filter className="w-4 h-4" />
+                                Filter by Frequency
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {(['all', 'daily', 'weekly', 'monthly'] as FrequencyFilter[]).map((freq) => (
+                                    <button
+                                        key={freq}
+                                        onClick={() => setFrequencyFilter(freq)}
+                                        className={`py-2 px-3 rounded-lg text-sm font-medium transition-all capitalize ${
+                                            frequencyFilter === freq
+                                                ? 'bg-red-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {freq === 'all' ? 'All' : freq}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {frequencyFilter !== 'all' && (
+                                <div className="mt-3 pt-3 border-t">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600 capitalize">{frequencyFilter} Customers:</span>
+                                        <span className="font-bold text-red-600">{filtered.length}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-sm mt-1">
+                                        <span className="text-gray-600">Total Pending:</span>
+                                        <span className="font-bold text-red-600">
+                                            {formatCurrency(filtered.reduce((sum, c) => sum + (c.totalAmount - c.paidAmount), 0))}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Overdue List */}
+                        {/* Customer List */}
                         {filtered.length === 0 ? (
                             <div className="bg-white rounded-lg p-8 text-center shadow-sm">
                                 <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                                 <p className="text-gray-600">
                                     {pending.length === 0
                                         ? 'No pending payments! 🎉'
-                                        : 'No customers in this range'}
+                                        : `No ${frequencyFilter} customers with overdue payments`}
                                 </p>
                             </div>
                         ) : (
@@ -286,8 +367,7 @@ export default function PendingPage() {
                                     return (
                                         <div
                                             key={c.id}
-                                            onClick={() => router.push(`/customers/${c.id}`)}
-                                            className={`bg-white rounded-lg p-3 shadow-sm border-l-4 cursor-pointer hover:shadow-md ${getColor(days)}`}
+                                            className={`bg-white rounded-lg p-3 shadow-sm border-l-4 ${getColor(days)}`}
                                         >
                                             <div className="flex items-start gap-2">
                                                 <span className="text-xl">{getIcon(days)}</span>
@@ -308,17 +388,19 @@ export default function PendingPage() {
                                                             </span>
                                                         </div>
                                                     </div>
+
                                                     <div className="text-xs text-gray-600 flex gap-4 mb-2">
-                                                        <span className="flex items-center gap-1">
-                                                            <Phone className="w-3 h-3" /> {c.phone}
+                                                        <span className="flex items-center gap-1 truncate">
+                                                            <Phone className="w-3 h-3 flex-shrink-0" /> {c.phone}
                                                         </span>
                                                         {c.address && (
                                                             <span className="flex items-center gap-1 truncate">
-                                                                <MapPin className="w-3 h-3" /> {c.address}
+                                                                <MapPin className="w-3 h-3 flex-shrink-0" /> {c.address}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="grid grid-cols-3 gap-2 text-xs">
+
+                                                    <div className="grid grid-cols-3 gap-2 text-xs mb-2">
                                                         <div>
                                                             <p className="text-gray-600">Pending</p>
                                                             <p className="font-bold text-red-600">{formatCurrency(remaining)}</p>
@@ -332,6 +414,22 @@ export default function PendingPage() {
                                                             <p className="font-bold text-xs">{formatDate(c.lastPayment)}</p>
                                                         </div>
                                                     </div>
+
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => router.push(`/customers/${c.id}`)}
+                                                            className="flex-1 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-xs font-medium"
+                                                        >
+                                                            View Details
+                                                        </button>
+                                                        <button
+                                                            onClick={() => sendReminder(c)}
+                                                            className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-1 text-xs font-medium"
+                                                        >
+                                                            <MessageSquare className="w-3 h-3" />
+                                                            Send Alert
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -342,94 +440,146 @@ export default function PendingPage() {
                     </>
                 )}
 
-                {/* ===== MONTHLY REPORT TAB ===== */}
-                {activeTab === 'monthly' && (
+                {/* MONTHLY REPORT TAB */}
+                {activeTab === 'report' && (
                     <>
-                        {/* Month Selector */}
-                        <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
-                            <label className="block text-sm font-medium mb-2">Select Month</label>
-                            <input
-                                type="month"
-                                value={selectedMonth}
-                                onChange={(e) => setSelectedMonth(e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
-                            />
+                        {/* Info Banner */}
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-4">
+                            <p className="text-sm text-blue-700 font-medium mb-1">
+                                📊 30-Day Cycle Reports
+                            </p>
+                            <p className="text-xs text-blue-600">
+                                Showing customers who completed at least one 30-day cycle from start date.
+                            </p>
                         </div>
 
-                        {/* Monthly Totals */}
+                        {/* Frequency Filter */}
+                        <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
+                            <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                                <Filter className="w-4 h-4" />
+                                Filter by Frequency
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {(['all', 'daily', 'weekly', 'monthly'] as FrequencyFilter[]).map((freq) => (
+                                    <button
+                                        key={freq}
+                                        onClick={() => setFrequencyFilter(freq)}
+                                        className={`py-2 px-3 rounded-lg text-sm font-medium transition-all capitalize ${
+                                            frequencyFilter === freq
+                                                ? 'bg-purple-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {freq === 'all' ? 'All' : freq}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Totals */}
                         <div className="grid grid-cols-3 gap-3 mb-4">
                             <div className="bg-blue-50 rounded-xl p-3 text-center border-2 border-blue-200">
                                 <p className="text-xs text-blue-700 mb-1">Expected</p>
-                                <p className="text-lg font-bold text-blue-700">
-                                    {formatCurrency(monthlyTotals.expected)}
+                                <p className="text-lg font-bold text-blue-700 truncate">
+                                    {formatCurrency(totals.expected)}
                                 </p>
                             </div>
                             <div className="bg-green-50 rounded-xl p-3 text-center border-2 border-green-200">
                                 <p className="text-xs text-green-700 mb-1">Received</p>
-                                <p className="text-lg font-bold text-green-700">
-                                    {formatCurrency(monthlyTotals.received)}
+                                <p className="text-lg font-bold text-green-700 truncate">
+                                    {formatCurrency(totals.received)}
                                 </p>
                             </div>
                             <div className="bg-red-50 rounded-xl p-3 text-center border-2 border-red-200">
                                 <p className="text-xs text-red-700 mb-1">Missing</p>
-                                <p className="text-lg font-bold text-red-700">
-                                    {formatCurrency(monthlyTotals.missing)}
+                                <p className="text-lg font-bold text-red-700 truncate">
+                                    {formatCurrency(totals.missing)}
                                 </p>
                             </div>
                         </div>
 
-                        {/* Monthly Reports List */}
-                        {monthlyReports.length === 0 ? (
+                        {/* Loading State */}
+                        {reportLoading ? (
+                            <div className="bg-white rounded-lg p-8 text-center shadow-sm">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                                <p className="text-gray-500">Generating reports...</p>
+                            </div>
+                        ) : reports.length === 0 ? (
                             <div className="bg-white rounded-lg p-8 text-center shadow-sm">
                                 <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                                 <p className="text-gray-600">
-                                    {new Date(selectedMonth + '-01') > new Date()
-                                        ? 'This month hasn\'t started yet'
-                                        : 'No data for selected month'}
+                                    {frequencyFilter !== 'all'
+                                        ? `No ${frequencyFilter} customers with completed 30-day cycles`
+                                        : 'No customers with completed 30-day cycles yet'}
                                 </p>
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {monthlyReports.map((report) => (
+                                {reports.map((report) => (
                                     <div
-                                        key={report.customer.id}
+                                        key={`${report.customer.id}-${report.cycleNumber}`}
                                         className={`bg-white rounded-xl p-4 shadow-sm border-l-4 ${
                                             report.missing > 0 ? 'border-red-500' : 'border-green-500'
                                         }`}
                                     >
                                         <div className="flex items-start justify-between mb-3">
-                                            <div className="flex-1">
-                                                <h3 className="font-semibold text-lg">{report.customer.name}</h3>
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="font-semibold text-lg truncate">{report.customer.name}</h3>
                                                 <p className="text-xs text-gray-500 capitalize">
-                                                    {report.customer.frequency} customer
+                                                    {report.customer.frequency} customer • Cycle {report.cycleNumber}
+                                                </p>
+                                                <p className="text-xs text-purple-600 font-medium mt-1">
+                                                    📅 {formatDate(report.cycleStart)} → {formatDate(report.cycleEnd)}
                                                 </p>
                                             </div>
                                             {report.missing > 0 && (
                                                 <button
-                                                    onClick={() => sendWhatsAppReminder(report.customer, report.missedDates.length)}
-                                                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1 text-sm font-medium"
+                                                    onClick={() => sendWhatsAppReport(report)}
+                                                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1 text-sm font-medium flex-shrink-0 ml-2"
                                                 >
                                                     <MessageSquare className="w-4 h-4" />
-                                                    Send Alert
+                                                    Alert
                                                 </button>
                                             )}
                                         </div>
 
-                                        <div className="grid grid-cols-3 gap-3 mb-3">
-                                            <div className="bg-blue-50 rounded-lg p-2">
-                                                <p className="text-xs text-blue-700">Expected</p>
-                                                <p className="font-bold text-blue-700">{formatCurrency(report.expected)}</p>
+                                        {/* Completion Rate */}
+                                        <div className="mb-3">
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-gray-600">Completion Rate</span>
+                                                <span className="font-bold">{report.completionRate}%</span>
                                             </div>
-                                            <div className="bg-green-50 rounded-lg p-2">
-                                                <p className="text-xs text-green-700">Received</p>
-                                                <p className="font-bold text-green-700">{formatCurrency(report.received)}</p>
-                                            </div>
-                                            <div className="bg-red-50 rounded-lg p-2">
-                                                <p className="text-xs text-red-700">Missing</p>
-                                                <p className="font-bold text-red-700">{formatCurrency(report.missing)}</p>
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div
+                                                    className={`h-2 rounded-full transition-all ${
+                                                        report.completionRate >= 80
+                                                            ? 'bg-green-500'
+                                                            : report.completionRate >= 50
+                                                                ? 'bg-yellow-500'
+                                                                : 'bg-red-500'
+                                                    }`}
+                                                    style={{ width: `${report.completionRate}%` }}
+                                                />
                                             </div>
                                         </div>
 
+                                        {/* Stats */}
+                                        <div className="grid grid-cols-3 gap-3 mb-3">
+                                            <div className="bg-blue-50 rounded-lg p-2">
+                                                <p className="text-xs text-blue-700">Expected</p>
+                                                <p className="font-bold text-blue-700 truncate">{formatCurrency(report.expected)}</p>
+                                            </div>
+                                            <div className="bg-green-50 rounded-lg p-2">
+                                                <p className="text-xs text-green-700">Received</p>
+                                                <p className="font-bold text-green-700 truncate">{formatCurrency(report.received)}</p>
+                                            </div>
+                                            <div className="bg-red-50 rounded-lg p-2">
+                                                <p className="text-xs text-red-700">Missing</p>
+                                                <p className="font-bold text-red-700 truncate">{formatCurrency(report.missing)}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Missed Dates */}
                                         {report.missedDates.length > 0 && (
                                             <div className="bg-red-50 rounded-lg p-3 border border-red-200">
                                                 <p className="text-xs font-semibold text-red-700 mb-2">
@@ -445,6 +595,16 @@ export default function PendingPage() {
                                                         </span>
                                                     ))}
                                                 </div>
+                                            </div>
+                                        )}
+
+                                        {/* Perfect Badge */}
+                                        {report.completionRate === 100 && (
+                                            <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                                                <CheckCircle className="w-4 h-4 text-green-600" />
+                                                <p className="text-xs font-medium text-green-700">
+                                                    ✨ Perfect completion! All payments received.
+                                                </p>
                                             </div>
                                         )}
                                     </div>

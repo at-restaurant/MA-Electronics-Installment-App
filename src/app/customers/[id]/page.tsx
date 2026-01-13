@@ -1,4 +1,4 @@
-// src/app/customers/[id]/page.tsx - COMPLETE WITH PENDING TRANSACTIONS
+// src/app/customers/[id]/page.tsx - WITH FILTERS & ADVANCED PAYMENT TRACKING
 
 'use client';
 
@@ -7,7 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import {
     Phone, MapPin, CreditCard, Calendar, Edit, Trash2,
     DollarSign, History, FileText, CheckCircle, X, UserCheck,
-    Image as ImageIcon, Clock
+    Clock, ChevronDown, ChevronUp, TrendingUp, Filter, Zap
 } from 'lucide-react';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -25,6 +25,17 @@ import {
 import type { Customer, Payment } from '@/types';
 import { usePayments } from '@/hooks/useCustomers';
 
+interface PendingTransaction {
+    date: string;
+    expectedAmount: number;
+    paidAmount: number;
+    remainingAmount: number;
+    daysOverdue: number;
+    status: 'fully_pending' | 'partially_paid' | 'paid';
+}
+
+type TransactionFilter = 'all' | 'pending' | 'partial' | 'paid' | 'advanced';
+
 export default function CustomerDetailPage() {
     const router = useRouter();
     const params = useParams();
@@ -35,14 +46,37 @@ export default function CustomerDetailPage() {
     const [loading, setLoading] = useState(true);
 
     const paymentModal = useModal();
+    const advancedModal = useModal();
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentSource, setPaymentSource] = useState<'online' | 'offline'>('offline');
+    const [selectedPendingDate, setSelectedPendingDate] = useState<string | null>(null);
+    const [isAdvancedPayment, setIsAdvancedPayment] = useState(false);
+    const [advancedInstallments, setAdvancedInstallments] = useState('1');
 
     const { payments, addPayment, deletePayment } = usePayments(customerId);
+
+    // ✅ Filter State
+    const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>('all');
+    const [showAllHistory, setShowAllHistory] = useState(false);
+
+    // ✅ Calculate stats
+    const [stats, setStats] = useState({
+        totalPending: 0,
+        totalPartial: 0,
+        totalPaid: 0,
+        advancedCount: 0,
+        advancedAmount: 0
+    });
 
     useEffect(() => {
         loadCustomer();
     }, [customerId]);
+
+    useEffect(() => {
+        if (customer) {
+            calculateStats();
+        }
+    }, [customer, payments]);
 
     const loadCustomer = async () => {
         const found = await db.customers.get(customerId);
@@ -52,6 +86,30 @@ export default function CustomerDetailPage() {
         }
         setCustomer(found);
         setLoading(false);
+    };
+
+    // ✅ Calculate transaction stats
+    const calculateStats = () => {
+        if (!customer) return;
+
+        const pendingTxns = generatePendingTransactions();
+
+        const pending = pendingTxns.filter(t => t.status === 'fully_pending').length;
+        const partial = pendingTxns.filter(t => t.status === 'partially_paid').length;
+        const paid = payments.filter(p => !p.isAdvanced).length;
+
+        // ✅ Count advanced payments
+        const advancedPayments = payments.filter(p => p.isAdvanced);
+        const advancedCount = advancedPayments.length;
+        const advancedAmount = advancedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+        setStats({
+            totalPending: pending,
+            totalPartial: partial,
+            totalPaid: paid,
+            advancedCount,
+            advancedAmount
+        });
     };
 
     const handleAddPayment = async () => {
@@ -66,21 +124,29 @@ export default function CustomerDetailPage() {
 
         const remaining = customer.totalAmount - customer.paidAmount;
 
-        if (amount > remaining) {
-            if (!confirm('Payment exceeds remaining balance. Continue?')) return;
+        if (amount > remaining && !isAdvancedPayment) {
+            if (!confirm('Payment exceeds remaining balance. Mark as advanced?')) {
+                setIsAdvancedPayment(true);
+                return;
+            }
         }
 
         try {
+            const paymentDate = selectedPendingDate || new Date().toISOString().split('T')[0];
+
             await addPayment({
                 customerId: customer.id,
                 amount,
-                date: new Date().toISOString().split('T')[0],
+                date: paymentDate,
                 paymentSource,
+                isAdvanced: isAdvancedPayment, // ✅ Track if advanced
             });
 
             await loadCustomer();
             setPaymentAmount('');
             setPaymentSource('offline');
+            setSelectedPendingDate(null);
+            setIsAdvancedPayment(false);
             paymentModal.hide();
 
             const updatedCustomer = await db.customers.get(customerId);
@@ -92,6 +158,41 @@ export default function CustomerDetailPage() {
         } catch (error) {
             console.error('Error adding payment:', error);
             alert('Failed to add payment');
+        }
+    };
+
+    // ✅ Add multiple advanced payments
+    const handleAddAdvancedPayments = async () => {
+        if (!customer) return;
+
+        const count = parseInt(advancedInstallments);
+        const amount = customer.installmentAmount * count;
+
+        if (!count || count <= 0) {
+            alert('Enter valid number of installments');
+            return;
+        }
+
+        if (!confirm(`Add ${count} installments (${formatCurrency(amount)}) as advanced payment?`)) {
+            return;
+        }
+
+        try {
+            await addPayment({
+                customerId: customer.id,
+                amount,
+                date: new Date().toISOString().split('T')[0],
+                paymentSource,
+                isAdvanced: true,
+            });
+
+            await loadCustomer();
+            setAdvancedInstallments('1');
+            advancedModal.hide();
+            alert('✅ Advanced payment added!');
+        } catch (error) {
+            console.error('Error adding advanced payment:', error);
+            alert('Failed to add advanced payment');
         }
     };
 
@@ -126,27 +227,78 @@ export default function CustomerDetailPage() {
         }
     };
 
-    // ✅ GENERATE PENDING TRANSACTIONS
-    const generatePendingTransactions = () => {
+    // ✅ Generate pending transactions
+    const generatePendingTransactions = (): PendingTransaction[] => {
         if (!customer || customer.status !== 'active') return [];
 
         const today = new Date();
-        const lastPaymentDate = new Date(customer.lastPayment);
-        const pendingDays: string[] = [];
+        const startDate = new Date(customer.startDate);
+        const pending: PendingTransaction[] = [];
 
-        // Calculate days to add based on frequency
-        const daysToAdd = customer.frequency === 'daily' ? 1 : customer.frequency === 'weekly' ? 7 : 30;
+        const daysIncrement = customer.frequency === 'daily' ? 1
+            : customer.frequency === 'weekly' ? 7 : 30;
 
-        let currentDate = new Date(lastPaymentDate);
-        currentDate.setDate(currentDate.getDate() + daysToAdd);
+        let currentDate = new Date(startDate);
 
-        // Generate all pending dates from last payment to today
         while (currentDate <= today) {
-            pendingDays.push(currentDate.toISOString().split('T')[0]);
-            currentDate.setDate(currentDate.getDate() + daysToAdd);
+            const dateStr = currentDate.toISOString().split('T')[0];
+
+            const paymentsForDate = payments.filter(p => p.date === dateStr && !p.isAdvanced);
+            const paidForDate = paymentsForDate.reduce((sum, p) => sum + p.amount, 0);
+
+            const expectedAmount = customer.installmentAmount;
+            const remainingAmount = Math.max(0, expectedAmount - paidForDate);
+
+            const daysOverdue = Math.floor(
+                (today.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+            );
+
+            const status: PendingTransaction['status'] =
+                paidForDate === 0 ? 'fully_pending'
+                    : paidForDate >= expectedAmount ? 'paid'
+                        : 'partially_paid';
+
+            if (status !== 'paid') {
+                pending.push({
+                    date: dateStr,
+                    expectedAmount,
+                    paidAmount: paidForDate,
+                    remainingAmount,
+                    daysOverdue,
+                    status
+                });
+            }
+
+            currentDate.setDate(currentDate.getDate() + daysIncrement);
         }
 
-        return pendingDays;
+        return pending.sort((a, b) => b.daysOverdue - a.daysOverdue);
+    };
+
+    const handlePaySpecific = (pendingDate: string, remainingAmount: number) => {
+        setSelectedPendingDate(pendingDate);
+        setPaymentAmount(remainingAmount.toString());
+        setIsAdvancedPayment(false);
+        paymentModal.show();
+    };
+
+    // ✅ Filter transactions
+    const filterTransactions = () => {
+        const pendingTxns = generatePendingTransactions();
+
+        switch (transactionFilter) {
+            case 'pending':
+                return pendingTxns.filter(t => t.status === 'fully_pending');
+            case 'partial':
+                return pendingTxns.filter(t => t.status === 'partially_paid');
+            case 'paid':
+                return payments.filter(p => !p.isAdvanced);
+            case 'advanced':
+                return payments.filter(p => p.isAdvanced);
+            case 'all':
+            default:
+                return pendingTxns;
+        }
     };
 
     if (loading || !customer || !profile) {
@@ -163,8 +315,11 @@ export default function CustomerDetailPage() {
     const progress = calculateProgress(customer.paidAmount, customer.totalAmount);
     const remaining = customer.totalAmount - customer.paidAmount;
     const isCompleted = progress >= 100;
-    const daysOverdue = calculateDaysOverdue(customer.lastPayment);
-    const pendingTransactions = generatePendingTransactions();
+    const daysOverdue = calculateDaysOverdue(customer.lastPayment, customer.frequency);
+    const filteredTransactions = filterTransactions();
+
+    const recentPayments = showAllHistory ? payments : payments.slice(0, 5);
+    const hasMorePayments = payments.length > 5;
 
     return (
         <div className="min-h-screen bg-gray-50 pb-20">
@@ -216,27 +371,30 @@ export default function CustomerDetailPage() {
                                         <span className="truncate">{customer.address}</span>
                                     </div>
                                 )}
-                                {customer.cnic && (
-                                    <div className="flex items-center gap-2">
-                                        <CreditCard className="w-4 h-4 flex-shrink-0" />
-                                        <span>{customer.cnic}</span>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
 
-                    {customer.cnicPhoto && (
-                        <div className="mb-4">
-                            <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                                <ImageIcon className="w-4 h-4" />
-                                CNIC Photo
-                            </p>
-                            <img
-                                src={customer.cnicPhoto}
-                                alt="CNIC"
-                                className="w-full max-w-md h-auto rounded-lg border-2 border-gray-200 shadow-sm"
-                            />
+                    {/* ✅ Advanced Payment Badge */}
+                    {stats.advancedCount > 0 && (
+                        <div className="mb-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl">
+                            <div className="flex items-center gap-2">
+                                <TrendingUp className="w-5 h-5 text-green-600" />
+                                <div className="flex-1">
+                                    <p className="text-sm font-semibold text-green-700">
+                                        {stats.advancedCount} Advanced Payment{stats.advancedCount > 1 ? 's' : ''} 🎉
+                                    </p>
+                                    <p className="text-xs text-green-600">
+                                        {formatCurrency(stats.advancedAmount)} paid in advance
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setTransactionFilter('advanced')}
+                                    className="text-xs text-green-600 font-medium hover:underline"
+                                >
+                                    View →
+                                </button>
+                            </div>
                         </div>
                     )}
 
@@ -280,203 +438,244 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Action Buttons */}
+                <div className="grid grid-cols-3 gap-2">
                     <button
-                        onClick={() => paymentModal.show()}
+                        onClick={() => {
+                            setSelectedPendingDate(null);
+                            setIsAdvancedPayment(false);
+                            paymentModal.show();
+                        }}
                         disabled={isCompleted}
-                        className={`w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 ${
+                        className={`py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-1 text-sm ${
                             isCompleted
                                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30'
+                                : 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg'
                         }`}
                     >
-                        <DollarSign className="w-5 h-5" />
+                        <DollarSign className="w-4 h-4" />
                         Add Payment
+                    </button>
+                    <button
+                        onClick={() => advancedModal.show()}
+                        disabled={isCompleted}
+                        className={`py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-1 text-sm ${
+                            isCompleted
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'bg-green-600 text-white hover:bg-green-700 shadow-lg'
+                        }`}
+                    >
+                        <Zap className="w-4 h-4" />
+                        Advanced
                     </button>
                     <WhatsAppButton
                         customer={customer}
                         type={daysOverdue > 7 ? 'overdue' : 'reminder'}
                         daysOverdue={daysOverdue}
-                        className="py-3 px-4 shadow-lg shadow-green-500/30 w-full"
+                        className="py-3 px-2 shadow-lg text-sm"
                     />
                 </div>
 
-                {/* Guarantors */}
-                {customer.guarantors && customer.guarantors.length > 0 && (
-                    <div className="bg-white rounded-2xl p-4 shadow-sm">
-                        <h3 className="font-semibold mb-3 flex items-center gap-2">
-                            <UserCheck className="w-5 h-5 text-purple-600" />
-                            Guarantors ({customer.guarantors.length})
-                        </h3>
-                        <div className="space-y-3">
-                            {customer.guarantors.map(g => (
-                                <div
-                                    key={g.id}
-                                    className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200"
-                                >
-                                    <div className="flex items-start gap-3">
-                                        <div className="flex gap-2 flex-shrink-0">
-                                            {g.photos && g.photos.length > 0 ? (
-                                                <>
-                                                    {g.photos.slice(0, 2).map((photo, idx) => (
-                                                        <img
-                                                            key={idx}
-                                                            src={photo}
-                                                            alt={`${g.name} ${idx + 1}`}
-                                                            className="w-16 h-16 rounded-lg object-cover border-2 border-white shadow-sm"
-                                                        />
-                                                    ))}
-                                                    {g.photos.length > 2 && (
-                                                        <div className="w-16 h-16 rounded-lg bg-purple-100 flex items-center justify-center text-sm text-purple-600 font-bold border-2 border-white shadow-sm">
-                                                            +{g.photos.length - 2}
-                                                        </div>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <div className="w-16 h-16 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xl border-2 border-white shadow-sm">
-                                                    {g.name.charAt(0)}
-                                                </div>
-                                            )}
-                                        </div>
+                {/* ✅ TRANSACTION STATS */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                        <Filter className="w-5 h-5 text-purple-600" />
+                        Transaction Summary
+                    </h3>
+                    <div className="grid grid-cols-4 gap-2">
+                        <button
+                            onClick={() => setTransactionFilter('pending')}
+                            className={`p-3 rounded-lg border-2 transition-all ${
+                                transactionFilter === 'pending'
+                                    ? 'border-orange-500 bg-orange-50'
+                                    : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                        >
+                            <p className="text-2xl font-bold text-orange-600">{stats.totalPending}</p>
+                            <p className="text-xs text-gray-600 mt-1">Pending</p>
+                        </button>
+                        <button
+                            onClick={() => setTransactionFilter('partial')}
+                            className={`p-3 rounded-lg border-2 transition-all ${
+                                transactionFilter === 'partial'
+                                    ? 'border-yellow-500 bg-yellow-50'
+                                    : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                        >
+                            <p className="text-2xl font-bold text-yellow-600">{stats.totalPartial}</p>
+                            <p className="text-xs text-gray-600 mt-1">Partial</p>
+                        </button>
+                        <button
+                            onClick={() => setTransactionFilter('paid')}
+                            className={`p-3 rounded-lg border-2 transition-all ${
+                                transactionFilter === 'paid'
+                                    ? 'border-green-500 bg-green-50'
+                                    : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                        >
+                            <p className="text-2xl font-bold text-green-600">{stats.totalPaid}</p>
+                            <p className="text-xs text-gray-600 mt-1">Paid</p>
+                        </button>
+                        <button
+                            onClick={() => setTransactionFilter('advanced')}
+                            className={`p-3 rounded-lg border-2 transition-all ${
+                                transactionFilter === 'advanced'
+                                    ? 'border-blue-500 bg-blue-50'
+                                    : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                        >
+                            <p className="text-2xl font-bold text-blue-600">{stats.advancedCount}</p>
+                            <p className="text-xs text-gray-600 mt-1">Advanced</p>
+                        </button>
+                    </div>
+                </div>
 
+                {/* ✅ FILTERED TRANSACTIONS */}
+                {transactionFilter !== 'paid' && transactionFilter !== 'advanced' && filteredTransactions.length > 0 && (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-semibold flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-orange-600" />
+                                {transactionFilter === 'all' ? 'All Pending' : transactionFilter === 'pending' ? 'Fully Pending' : 'Partially Paid'} ({filteredTransactions.length})
+                            </h3>
+                            {transactionFilter !== 'all' && (
+                                <button
+                                    onClick={() => setTransactionFilter('all')}
+                                    className="text-xs text-blue-600 hover:underline"
+                                >
+                                    Show All
+                                </button>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            {(filteredTransactions as PendingTransaction[]).slice(0, showAllHistory ? undefined : 10).map((txn) => (
+                                <div
+                                    key={txn.date}
+                                    className={`flex items-center justify-between p-3 rounded-lg border-2 ${
+                                        txn.status === 'partially_paid'
+                                            ? 'bg-yellow-50 border-yellow-200'
+                                            : 'bg-orange-50 border-orange-200'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3 flex-1">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                            txn.status === 'partially_paid' ? 'bg-yellow-100' : 'bg-orange-100'
+                                        }`}>
+                                            <Clock className={`w-5 h-5 ${
+                                                txn.status === 'partially_paid' ? 'text-yellow-600' : 'text-orange-600'
+                                            }`} />
+                                        </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-semibold text-base truncate">{g.name}</p>
-                                            <p className="text-sm text-gray-600 flex items-center gap-1 mt-1">
-                                                <Phone className="w-3 h-3" />
-                                                {g.phone}
-                                            </p>
-                                            {g.cnic && (
-                                                <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                                                    <CreditCard className="w-3 h-3" />
-                                                    {g.cnic}
+                                            <p className="text-sm font-medium text-gray-700">{formatDate(txn.date)}</p>
+                                            {txn.status === 'partially_paid' && (
+                                                <p className="text-xs text-gray-600 mt-1">
+                                                    Paid: {formatCurrency(txn.paidAmount)} of {formatCurrency(txn.expectedAmount)}
                                                 </p>
                                             )}
-                                            <div className="flex items-center gap-2 mt-2">
-                                                {g.relation && (
-                                                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                                                        {g.relation}
-                                                    </span>
-                                                )}
-                                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
-                                                    {g.photos?.length || 0} photos
-                                                </span>
-                                            </div>
+                                            <p className="text-xs text-gray-500 mt-0.5">{txn.daysOverdue} days overdue</p>
                                         </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-3">
+                                        <div className="text-right mr-2">
+                                            <p className={`font-bold text-sm ${
+                                                txn.status === 'partially_paid' ? 'text-yellow-600' : 'text-orange-600'
+                                            }`}>
+                                                {formatCurrency(txn.remainingAmount)}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => handlePaySpecific(txn.date, txn.remainingAmount)}
+                                            className={`px-3 py-1.5 rounded-lg hover:opacity-90 text-xs font-medium whitespace-nowrap ${
+                                                txn.status === 'partially_paid'
+                                                    ? 'bg-yellow-600 text-white'
+                                                    : 'bg-orange-600 text-white'
+                                            }`}
+                                        >
+                                            Pay
+                                        </button>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                        {filteredTransactions.length > 10 && (
+                            <button
+                                onClick={() => setShowAllHistory(!showAllHistory)}
+                                className="w-full mt-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg font-medium flex items-center justify-center gap-1"
+                            >
+                                {showAllHistory ? (
+                                    <>Show Less <ChevronUp className="w-4 h-4" /></>
+                                ) : (
+                                    <>Show All ({filteredTransactions.length - 10} more) <ChevronDown className="w-4 h-4" /></>
+                                )}
+                            </button>
+                        )}
                     </div>
                 )}
 
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-blue-600" />
-                        Installment Details
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <p className="text-sm text-gray-500">Installment Amount</p>
-                            <p className="font-semibold">{formatCurrency(customer.installmentAmount)}</p>
+                {/* ✅ PAID/ADVANCED TRANSACTIONS */}
+                {(transactionFilter === 'paid' || transactionFilter === 'advanced') && (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-semibold flex items-center gap-2">
+                                {transactionFilter === 'advanced' ? (
+                                    <>
+                                        <Zap className="w-5 h-5 text-green-600" />
+                                        Advanced Payments ({stats.advancedCount})
+                                    </>
+                                ) : (
+                                    <>
+                                        <History className="w-5 h-5 text-blue-600" />
+                                        Completed Payments ({stats.totalPaid})
+                                    </>
+                                )}
+                            </h3>
+                            <button
+                                onClick={() => setTransactionFilter('all')}
+                                className="text-xs text-blue-600 hover:underline"
+                            >
+                                Show All
+                            </button>
                         </div>
-                        <div>
-                            <p className="text-sm text-gray-500">Frequency</p>
-                            <p className="font-semibold capitalize">{customer.frequency}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500">Last Payment</p>
-                            <p className="font-semibold">{formatDate(customer.lastPayment)}</p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-gray-500">Days Since</p>
-                            <p className={`font-semibold ${daysOverdue > 7 ? 'text-red-600' : 'text-gray-900'}`}>
-                                {daysOverdue} days
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* ✅ PAYMENT HISTORY WITH PENDING TRANSACTIONS */}
-                <div className="bg-white rounded-2xl p-4 shadow-sm">
-                    <h3 className="font-semibold mb-4 flex items-center gap-2">
-                        <History className="w-5 h-5 text-blue-600" />
-                        Payment History ({payments.length + pendingTransactions.length})
-                    </h3>
-                    {payments.length === 0 && pendingTransactions.length === 0 ? (
-                        <p className="text-center text-gray-500 py-8">No payments yet</p>
-                    ) : (
                         <div className="space-y-3">
-                            {/* ✅ PENDING TRANSACTIONS */}
-                            {pendingTransactions.map(pendingDate => {
-                                const daysOverdueForThis = Math.floor(
-                                    (new Date().getTime() - new Date(pendingDate).getTime()) / (1000 * 60 * 60 * 24)
-                                );
-                                return (
-                                    <div
-                                        key={`pending-${pendingDate}`}
-                                        className="flex items-center justify-between py-3 border-2 border-orange-200 bg-orange-50 rounded-lg px-3"
-                                    >
-                                        <div className="flex items-center gap-3 flex-1">
-                                            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                                                <Clock className="w-5 h-5 text-orange-600" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="px-2 py-0.5 bg-orange-200 text-orange-800 rounded-full text-xs font-medium">
-                                                        Pending
-                                                    </span>
-                                                    <p className="text-xs text-orange-700 font-medium">
-                                                        {daysOverdueForThis} days overdue
-                                                    </p>
-                                                </div>
-                                                <p className="text-sm font-medium text-gray-700">{formatDate(pendingDate)}</p>
-                                                <p className="text-xs text-gray-500 mt-0.5 capitalize">
-                                                    {customer.frequency} installment expected
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 ml-3">
-                                            <p className="font-bold text-orange-600">{formatCurrency(customer.installmentAmount)}</p>
-                                            <button
-                                                onClick={() => {
-                                                    paymentModal.show();
-                                                }}
-                                                className="px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-xs font-medium whitespace-nowrap"
-                                            >
-                                                Pay Now
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-
-                            {/* ✅ COMPLETED PAYMENTS */}
-                            {payments.map(payment => (
+                            {(filteredTransactions as Payment[]).map(payment => (
                                 <div key={payment.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
                                     <div className="flex items-center gap-3 flex-1">
-                                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                                            <CheckCircle className="w-5 h-5 text-green-600" />
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                            payment.isAdvanced ? 'bg-green-100' : 'bg-blue-100'
+                                        }`}>
+                                            {payment.isAdvanced ? (
+                                                <Zap className="w-5 h-5 text-green-600" />
+                                            ) : (
+                                                <CheckCircle className="w-5 h-5 text-blue-600" />
+                                            )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-medium">{formatCurrency(payment.amount)}</p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="font-medium">{formatCurrency(payment.amount)}</p>
+                                                {payment.isAdvanced && (
+                                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                                                        Advanced
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-sm text-gray-500">{formatDate(payment.date)}</p>
                                             <p className="text-xs text-gray-400 mt-0.5">
-                                                {payment.paymentSource === 'online' ? '💳 Online Transfer' : '💵 Cash/Check'}
+                                                {payment.paymentSource === 'online' ? '💳 Online' : '💵 Cash'}
                                             </p>
                                         </div>
                                     </div>
                                     <button
                                         onClick={() => handleDeletePayment(payment.id)}
                                         className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                                        aria-label="Delete payment"
+                                        aria-label="Delete"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
                             ))}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 {customer.notes && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -489,14 +688,22 @@ export default function CustomerDetailPage() {
                 )}
             </div>
 
-            {/* Payment Modal */}
+            {/* ✅ PAYMENT MODAL */}
             {paymentModal.open && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
                     <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md">
                         <div className="p-4 border-b flex items-center justify-between">
-                            <h3 className="text-xl font-bold">Add Payment</h3>
+                            <h3 className="text-xl font-bold">
+                                {selectedPendingDate
+                                    ? `Pay for ${formatDate(selectedPendingDate)}`
+                                    : 'Add Payment'}
+                            </h3>
                             <button
-                                onClick={() => paymentModal.hide()}
+                                onClick={() => {
+                                    paymentModal.hide();
+                                    setSelectedPendingDate(null);
+                                    setIsAdvancedPayment(false);
+                                }}
                                 className="p-2 hover:bg-gray-100 rounded-full"
                             >
                                 <X className="w-5 h-5" />
@@ -504,6 +711,17 @@ export default function CustomerDetailPage() {
                         </div>
 
                         <div className="p-6 space-y-4">
+                            {selectedPendingDate && (
+                                <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                                    <p className="text-sm text-blue-700">
+                                        📅 Payment for: <strong>{formatDate(selectedPendingDate)}</strong>
+                                    </p>
+                                    <p className="text-xs text-blue-600 mt-1">
+                                        This payment will be recorded for this specific date
+                                    </p>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Amount *
@@ -515,6 +733,11 @@ export default function CustomerDetailPage() {
                                     placeholder="Enter amount"
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
+                                {selectedPendingDate && (
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        💡 Tip: You can pay partial amount. Remaining will still show as pending.
+                                    </p>
+                                )}
                             </div>
 
                             <div>
@@ -545,11 +768,121 @@ export default function CustomerDetailPage() {
                                 </div>
                             </div>
 
+                            {/* ✅ Mark as Advanced Option */}
+                            {!selectedPendingDate && (
+                                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAdvancedPayment}
+                                            onChange={(e) => setIsAdvancedPayment(e.target.checked)}
+                                            className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
+                                        />
+                                        <div>
+                                            <p className="text-sm font-medium text-gray-700">Mark as Advanced Payment</p>
+                                            <p className="text-xs text-gray-500">Payment for future installments</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            )}
+
                             <button
                                 onClick={handleAddPayment}
                                 className="w-full py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
                             >
-                                Add Payment
+                                {selectedPendingDate ? 'Record Payment' : isAdvancedPayment ? 'Add Advanced Payment' : 'Add Payment'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ✅ ADVANCED PAYMENT MODAL */}
+            {advancedModal.open && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md">
+                        <div className="p-4 border-b flex items-center justify-between">
+                            <h3 className="text-xl font-bold flex items-center gap-2">
+                                <Zap className="w-6 h-6 text-green-600" />
+                                Add Advanced Payment
+                            </h3>
+                            <button
+                                onClick={() => advancedModal.hide()}
+                                className="p-2 hover:bg-gray-100 rounded-full"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="p-4 bg-green-50 border-2 border-green-200 rounded-xl">
+                                <p className="text-sm font-medium text-green-700 mb-1">
+                                    💡 What is Advanced Payment?
+                                </p>
+                                <p className="text-xs text-green-600">
+                                    Pay multiple installments in advance. This helps track future payments separately.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Number of Installments *
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={advancedInstallments}
+                                    onChange={(e) => setAdvancedInstallments(e.target.value)}
+                                    placeholder="e.g., 5"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Installment amount: {formatCurrency(customer.installmentAmount)}
+                                </p>
+                            </div>
+
+                            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                <p className="text-sm text-gray-700">
+                                    Total Amount: <strong className="text-blue-600">
+                                    {formatCurrency(parseInt(advancedInstallments || '0') * customer.installmentAmount)}
+                                </strong>
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Payment Source *
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setPaymentSource('offline')}
+                                        className={`py-3 px-4 rounded-xl border-2 transition-all ${
+                                            paymentSource === 'offline'
+                                                ? 'border-green-500 bg-green-50 text-green-700'
+                                                : 'border-gray-200 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        💵 Cash/Check
+                                    </button>
+                                    <button
+                                        onClick={() => setPaymentSource('online')}
+                                        className={`py-3 px-4 rounded-xl border-2 transition-all ${
+                                            paymentSource === 'online'
+                                                ? 'border-green-500 bg-green-50 text-green-700'
+                                                : 'border-gray-200 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        💳 Online Transfer
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={handleAddAdvancedPayments}
+                                className="w-full py-3 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                            >
+                                <Zap className="w-5 h-5" />
+                                Add Advanced Payment
                             </button>
                         </div>
                     </div>

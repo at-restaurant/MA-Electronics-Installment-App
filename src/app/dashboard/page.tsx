@@ -1,4 +1,4 @@
-// src/app/dashboard/page.tsx - UPDATED WITH CLICKABLE INVESTMENT BOX
+// src/app/dashboard/page.tsx - FIXED RESPONSIVE DESIGN
 
 'use client';
 
@@ -71,13 +71,11 @@ export default function DashboardPage() {
         );
     }
 
-    // ✅ TODAY'S DAILY CUSTOMERS ONLY
     const todayCustomers = customers
         .filter(c => c.status === 'active' && c.frequency === 'daily')
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 10);
 
-    // ✅ CALCULATE NET INVESTMENT
     const totalHistory = profile.investmentHistory || [];
     const totalInvested = totalHistory.filter(e => e.type === 'INVESTED').reduce((sum, e) => sum + e.amount, 0);
     const totalReceived = totalHistory.filter(e => e.type === 'RECEIVED').reduce((sum, e) => sum + e.amount, 0);
@@ -88,40 +86,43 @@ export default function DashboardPage() {
             <GlobalHeader title="Dashboard" />
 
             <div className="pt-16 p-4 space-y-4">
-                {/* ✅ STATS GRID (WITHOUT Total Received) */}
+                {/* ✅ FIXED STATS GRID - RESPONSIVE */}
                 <div className="grid grid-cols-2 gap-3">
-                    {/* ✅ INVESTMENT BOX - CLICKABLE (NO AMOUNT SHOWN) */}
+                    {/* ✅ INVESTMENT BOX - FIXED OVERFLOW */}
                     <button
                         onClick={() => router.push('/dashboard/investment')}
-                        className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg text-left hover:shadow-xl transition-all active:scale-[0.98]"
+                        className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-3 text-white shadow-lg text-left hover:shadow-xl transition-all active:scale-[0.98]"
                     >
                         <div className="flex items-center justify-between mb-2">
-                            <DollarSign className="w-8 h-8 opacity-80" />
+                            <DollarSign className="w-7 h-7 opacity-80" />
                             {netInvestment >= 0 ? (
-                                <TrendingUp className="w-6 h-6 opacity-70" />
+                                <TrendingUp className="w-5 h-5 opacity-70" />
                             ) : (
-                                <TrendingDown className="w-6 h-6 opacity-70" />
+                                <TrendingDown className="w-5 h-5 opacity-70" />
                             )}
                         </div>
-                        <p className="text-sm opacity-90 mb-1">Investment</p>
-                        <p className="text-lg font-semibold opacity-90">View Details →</p>
+                        <p className="text-xs opacity-90 mb-1">Investment</p>
+                        <div className="flex items-center gap-1">
+                            <p className="text-sm font-semibold opacity-90 truncate">View Details</p>
+                            <ArrowRight className="w-4 h-4 opacity-90 flex-shrink-0" />
+                        </div>
                     </button>
 
-                    <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white shadow-lg">
-                        <AlertCircle className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Pending</p>
-                        <p className="text-3xl font-bold">{formatCurrency(stats.pending)}</p>
+                    <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-3 text-white shadow-lg">
+                        <AlertCircle className="w-7 h-7 mb-2 opacity-80" />
+                        <p className="text-xs opacity-90 mb-1">Pending</p>
+                        <p className="text-2xl font-bold truncate">{formatCurrency(stats.pending)}</p>
                     </div>
 
-                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-white shadow-lg">
-                        <Users className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Total Customers</p>
+                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-3 text-white shadow-lg">
+                        <Users className="w-7 h-7 mb-2 opacity-80" />
+                        <p className="text-xs opacity-90 mb-1">Total Customers</p>
                         <p className="text-2xl font-bold">{stats.totalCustomers}</p>
                     </div>
 
-                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white shadow-lg">
-                        <TrendingUp className="w-8 h-8 mb-2 opacity-80" />
-                        <p className="text-sm opacity-90 mb-1">Collection Rate</p>
+                    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-3 text-white shadow-lg">
+                        <TrendingUp className="w-7 h-7 mb-2 opacity-80" />
+                        <p className="text-xs opacity-90 mb-1">Collection Rate</p>
                         <p className="text-2xl font-bold">{Math.round(stats.collectionRate)}%</p>
                     </div>
                 </div>
@@ -151,7 +152,7 @@ export default function DashboardPage() {
                     </button>
                 </div>
 
-                {/* ✅ TODAY'S DAILY CUSTOMERS */}
+                {/* Today's Daily Customers */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-semibold">Today's Daily Customers</h3>
@@ -174,21 +175,21 @@ export default function DashboardPage() {
                                     onClick={() => router.push(`/customers/${customer.id}`)}
                                     className="flex items-center justify-between py-3 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg px-2 transition-colors"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm overflow-hidden flex-shrink-0">
                                             {customer.photo ? (
                                                 <img src={customer.photo} alt={customer.name} className="w-full h-full object-cover" />
                                             ) : (
                                                 customer.name.charAt(0)
                                             )}
                                         </div>
-                                        <div>
-                                            <p className="font-medium text-sm">{customer.name}</p>
-                                            <p className="text-xs text-gray-500">{customer.phone}</p>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-sm truncate">{customer.name}</p>
+                                            <p className="text-xs text-gray-500 truncate">{customer.phone}</p>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className="font-semibold text-green-600 text-sm">
+                                    <div className="text-right flex-shrink-0 ml-2">
+                                        <p className="font-semibold text-green-600 text-sm whitespace-nowrap">
                                             {formatCurrency(customer.installmentAmount)}
                                         </p>
                                         <p className="text-xs text-gray-500">Daily</p>

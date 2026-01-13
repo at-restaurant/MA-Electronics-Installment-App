@@ -66,6 +66,7 @@ export interface Payment {
     scheduleId?: number;
     investmentAmount?: number;
     paymentSource?: 'online' | 'offline';
+    isAdvanced?: boolean;
 }
 
 export interface NotificationSettings {
