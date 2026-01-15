@@ -12,4 +12,80 @@ html {
 body {
     background: #ffffff;
     color: var(--text-primary);
+    overflow-x: hidden; /* ✅ Prevent horizontal scroll */
+}
+
+/* ✅ MOBILE-FIRST TYPOGRAPHY - Prevent overflow */
+* {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* ✅ Currency amounts - Always fit */
+.currency-amount {
+    font-feature-settings: 'tnum'; /* Tabular numbers */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* ✅ Phone numbers - Allow wrapping */
+.phone-number {
+    word-break: break-all;
+}
+
+/* ✅ Long text - Truncate with ellipsis */
+.truncate-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ✅ Multi-line truncate (max 2 lines) */
+.truncate-multiline {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ✅ Responsive images */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* ✅ Prevent layout shift */
+.aspect-square {
+    aspect-ratio: 1 / 1;
+}
+
+/* ✅ Safe area for mobile notches */
+@supports (padding: max(0px)) {
+    body {
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+    }
+}
+
+/* ✅ Custom scrollbar (optional) */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
 }

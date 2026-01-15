@@ -1,4 +1,4 @@
-// src/app/customers/[id]/page.tsx - WITH FILTERS & ADVANCED PAYMENT TRACKING
+// src/app/customers/[id]/page.tsx - MOBILE OPTIMIZED VERSION
 
 'use client';
 
@@ -16,11 +16,13 @@ import { WhatsAppService } from '@/lib/whatsapp-unified';
 import { useProfile, useModal } from '@/hooks/useCompact';
 import {
     formatCurrency,
+    formatCurrencyCompact,
     formatDate,
     calculateDaysOverdue,
     calculateProgress,
     getStatusColor,
-    getStatusLabel
+    getStatusLabel,
+    truncateName
 } from '@/lib/utils';
 import type { Customer, Payment } from '@/types';
 import { usePayments } from '@/hooks/useCustomers';
@@ -139,7 +141,7 @@ export default function CustomerDetailPage() {
                 amount,
                 date: paymentDate,
                 paymentSource,
-                isAdvanced: isAdvancedPayment, // ✅ Track if advanced
+                isAdvanced: isAdvancedPayment,
             });
 
             await loadCustomer();
@@ -357,7 +359,8 @@ export default function CustomerDetailPage() {
                             )}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <h2 className="text-2xl font-bold mb-2 truncate">{customer.name}</h2>
+                            {/* ✅ MOBILE FIX: Smart truncate for long names */}
+                            <h2 className="text-xl font-bold mb-2 break-words line-clamp-2">{customer.name}</h2>
                             <div className="space-y-1.5 text-sm text-gray-600">
                                 {customer.phone && (
                                     <div className="flex items-center gap-2">
@@ -366,9 +369,9 @@ export default function CustomerDetailPage() {
                                     </div>
                                 )}
                                 {customer.address && (
-                                    <div className="flex items-center gap-2">
-                                        <MapPin className="w-4 h-4 flex-shrink-0" />
-                                        <span className="truncate">{customer.address}</span>
+                                    <div className="flex items-start gap-2">
+                                        <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                        <span className="text-sm line-clamp-2 break-words flex-1">{customer.address}</span>
                                     </div>
                                 )}
                             </div>
@@ -385,7 +388,7 @@ export default function CustomerDetailPage() {
                                         {stats.advancedCount} Advanced Payment{stats.advancedCount > 1 ? 's' : ''} 🎉
                                     </p>
                                     <p className="text-xs text-green-600">
-                                        {formatCurrency(stats.advancedAmount)} paid in advance
+                                        {formatCurrencyCompact(stats.advancedAmount)} paid in advance
                                     </p>
                                 </div>
                                 <button
@@ -422,18 +425,19 @@ export default function CustomerDetailPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4 pt-4 border-t">
+                    {/* ✅ MOBILE FIX: Compact currency display */}
+                    <div className="grid grid-cols-3 gap-3 pt-4 border-t">
                         <div>
                             <p className="text-xs text-gray-500 mb-1">Total</p>
-                            <p className="font-bold text-lg">{formatCurrency(customer.totalAmount)}</p>
+                            <p className="font-bold text-sm truncate">{formatCurrencyCompact(customer.totalAmount)}</p>
                         </div>
                         <div>
                             <p className="text-xs text-gray-500 mb-1">Paid</p>
-                            <p className="font-bold text-lg text-green-600">{formatCurrency(customer.paidAmount)}</p>
+                            <p className="font-bold text-sm text-green-600 truncate">{formatCurrencyCompact(customer.paidAmount)}</p>
                         </div>
                         <div>
-                            <p className="text-xs text-gray-500 mb-1">Remaining</p>
-                            <p className="font-bold text-lg text-orange-600">{formatCurrency(Math.max(0, remaining))}</p>
+                            <p className="text-xs text-gray-500 mb-1">Left</p>
+                            <p className="font-bold text-sm text-orange-600 truncate">{formatCurrencyCompact(Math.max(0, remaining))}</p>
                         </div>
                     </div>
                 </div>
@@ -530,7 +534,7 @@ export default function CustomerDetailPage() {
                     </div>
                 </div>
 
-                {/* ✅ FILTERED TRANSACTIONS */}
+                {/* ✅ FILTERED TRANSACTIONS - PENDING/PARTIAL */}
                 {transactionFilter !== 'paid' && transactionFilter !== 'advanced' && filteredTransactions.length > 0 && (
                     <div className="bg-white rounded-2xl p-4 shadow-sm">
                         <div className="flex items-center justify-between mb-4">
@@ -557,7 +561,7 @@ export default function CustomerDetailPage() {
                                             : 'bg-orange-50 border-orange-200'
                                     }`}
                                 >
-                                    <div className="flex items-center gap-3 flex-1">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                                             txn.status === 'partially_paid' ? 'bg-yellow-100' : 'bg-orange-100'
                                         }`}>
@@ -566,26 +570,27 @@ export default function CustomerDetailPage() {
                                             }`} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-700">{formatDate(txn.date)}</p>
+                                            <p className="text-xs font-medium text-gray-700 truncate">{formatDate(txn.date)}</p>
                                             {txn.status === 'partially_paid' && (
-                                                <p className="text-xs text-gray-600 mt-1">
-                                                    Paid: {formatCurrency(txn.paidAmount)} of {formatCurrency(txn.expectedAmount)}
+                                                <p className="text-xs text-gray-600 truncate">
+                                                    {formatCurrencyCompact(txn.paidAmount)} of {formatCurrencyCompact(txn.expectedAmount)}
                                                 </p>
                                             )}
-                                            <p className="text-xs text-gray-500 mt-0.5">{txn.daysOverdue} days overdue</p>
+                                            <p className="text-xs text-gray-500">{txn.daysOverdue}d late</p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 ml-3">
-                                        <div className="text-right mr-2">
+
+                                    <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                                        <div className="text-right">
                                             <p className={`font-bold text-sm ${
                                                 txn.status === 'partially_paid' ? 'text-yellow-600' : 'text-orange-600'
-                                            }`}>
-                                                {formatCurrency(txn.remainingAmount)}
+                                            } truncate max-w-[80px]`}>
+                                                {formatCurrencyCompact(txn.remainingAmount)}
                                             </p>
                                         </div>
                                         <button
                                             onClick={() => handlePaySpecific(txn.date, txn.remainingAmount)}
-                                            className={`px-3 py-1.5 rounded-lg hover:opacity-90 text-xs font-medium whitespace-nowrap ${
+                                            className={`px-2 py-1 rounded-lg hover:opacity-90 text-xs font-medium whitespace-nowrap ${
                                                 txn.status === 'partially_paid'
                                                     ? 'bg-yellow-600 text-white'
                                                     : 'bg-orange-600 text-white'
@@ -638,36 +643,35 @@ export default function CustomerDetailPage() {
                         </div>
                         <div className="space-y-3">
                             {(filteredTransactions as Payment[]).map(payment => (
-                                <div key={payment.id} className="flex items-center justify-between py-3 border-b last:border-b-0">
-                                    <div className="flex items-center gap-3 flex-1">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                <div key={payment.id} className="flex justify-between items-center py-2 border-b last:border-0">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                                             payment.isAdvanced ? 'bg-green-100' : 'bg-blue-100'
                                         }`}>
                                             {payment.isAdvanced ? (
-                                                <Zap className="w-5 h-5 text-green-600" />
+                                                <Zap className="w-4 h-4 text-green-600" />
                                             ) : (
-                                                <CheckCircle className="w-5 h-5 text-blue-600" />
+                                                <CheckCircle className="w-4 h-4 text-blue-600" />
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className="font-medium">{formatCurrency(payment.amount)}</p>
+                                            <div className="flex items-center gap-1">
+                                                <p className="font-medium text-sm truncate">{formatCurrencyCompact(payment.amount)}</p>
                                                 {payment.isAdvanced && (
-                                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                                                        Advanced
+                                                    <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium flex-shrink-0">
+                                                        Adv
                                                     </span>
                                                 )}
                                             </div>
-                                            <p className="text-sm text-gray-500">{formatDate(payment.date)}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5">
-                                                {payment.paymentSource === 'online' ? '💳 Online' : '💵 Cash'}
+                                            <p className="text-xs text-gray-500 truncate">{formatDate(payment.date)}</p>
+                                            <p className="text-xs text-gray-400">
+                                                {payment.paymentSource === 'online' ? '💳' : '💵'}
                                             </p>
                                         </div>
                                     </div>
                                     <button
                                         onClick={() => handleDeletePayment(payment.id)}
-                                        className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                                        aria-label="Delete"
+                                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-full transition-colors flex-shrink-0"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>

@@ -1,4 +1,4 @@
-// src/lib/utils.ts - FIXED WITH FREQUENCY AWARENESS
+// src/lib/utils.ts - WITH COMPACT CURRENCY FORMATTING
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -14,6 +14,42 @@ export function formatCurrency(amount: number): string {
     })
         .format(amount)
         .replace("PKR", "₨");
+}
+
+/**
+ * ✅ NEW: Compact currency formatting for mobile
+ * Converts large numbers to K/M format
+ * Examples: 1000 → ₨1K, 50000 → ₨50K, 1500000 → ₨1.5M
+ */
+export function formatCurrencyCompact(amount: number): string {
+    const absAmount = Math.abs(amount);
+
+    if (absAmount >= 1000000) {
+        const millions = amount / 1000000;
+        return `₨${millions.toFixed(1)}M`;
+    } else if (absAmount >= 1000) {
+        const thousands = amount / 1000;
+        return `₨${thousands.toFixed(thousands % 1 === 0 ? 0 : 1)}K`;
+    } else {
+        return `₨${amount.toFixed(0)}`;
+    }
+}
+
+/**
+ * ✅ NEW: Truncate long names intelligently
+ * Keeps first name + last initial if too long
+ */
+export function truncateName(name: string, maxLength: number = 20): string {
+    if (name.length <= maxLength) return name;
+
+    const parts = name.split(' ');
+    if (parts.length > 1) {
+        const firstName = parts[0];
+        const lastInitial = parts[parts.length - 1].charAt(0);
+        return `${firstName} ${lastInitial}.`;
+    }
+
+    return name.substring(0, maxLength - 3) + '...';
 }
 
 export function formatDate(dateString: string): string {
