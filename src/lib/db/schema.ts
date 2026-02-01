@@ -19,12 +19,25 @@ export class MADatabase extends Dexie {
     constructor() {
         super('MA-Electronics-App');
 
-        this.version(2).stores({
+        // ✅ UPDATE TO VERSION 3 FOR INVESTMENT TYPE CHANGE
+        this.version(3).stores({
             profiles: 'id, createdAt',
             customers: 'id, profileId, [profileId+status]',
             payments: 'id, customerId, date, [customerId+date]',
             whatsappQueue: '++id, customerId, scheduledFor, attempts',
             metadata: 'key, updatedAt',
+        }).upgrade(trans => {
+            // ✅ MIGRATION: Convert old RECEIVED to WITHDRAWN
+            return trans.table('profiles').toCollection().modify(profile => {
+                if (profile.investmentHistory) {
+                    profile.investmentHistory = profile.investmentHistory.map((entry: any) => {
+                        if (entry.type === 'RECEIVED') {
+                            entry.type = 'WITHDRAWN';
+                        }
+                        return entry;
+                    });
+                }
+            });
         });
 
         // Add hooks for timestamps

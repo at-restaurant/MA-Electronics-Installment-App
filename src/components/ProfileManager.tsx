@@ -24,7 +24,7 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: Props) {
     const [investmentForm, setInvestmentForm] = useState<{
         amount: string;
         note: string;
-        type: 'INVESTED' | 'RECEIVED';
+        type: 'INVESTED' | 'WITHDRAWN';
         customerId: number | null;
     }>({
         amount: '',
@@ -71,7 +71,7 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: Props) {
         }
 
         // ✅ Validate customer selection for RECEIVED type
-        if (investmentForm.type === 'RECEIVED' && !investmentForm.customerId) {
+        if (investmentForm.type === 'WITHDRAWN' && !investmentForm.customerId) {
             alert('Please select a customer for received payment');
             return;
         }
@@ -128,7 +128,7 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: Props) {
             });
 
             // ✅ If RECEIVED, also add payment to customer
-            if (entry.type === 'RECEIVED' && entry.customerId) {
+            if (entry.type === 'WITHDRAWN' && entry.customerId) {
                 const customer = await db.customers.get(entry.customerId);
                 if (customer) {
                     const payment = {
@@ -221,7 +221,7 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: Props) {
         .reduce((sum, e) => sum + e.amount, 0);
 
     const totalReceived = (selectedProfile?.investmentHistory || [])
-        .filter(e => e.type === 'RECEIVED')
+        .filter(e => e.type === 'WITHDRAWN')
         .reduce((sum, e) => sum + e.amount, 0);
 
     const netInvestment = totalInvested - totalReceived;
@@ -322,10 +322,10 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: Props) {
                                         <button
                                             onClick={() => setInvestmentForm({
                                                 ...investmentForm,
-                                                type: 'RECEIVED'
+                                                type: 'WITHDRAWN'
                                             })}
                                             className={`py-2 px-3 rounded-lg border-2 transition-all text-sm font-medium ${
-                                                investmentForm.type === 'RECEIVED'
+                                                investmentForm.type === 'WITHDRAWN'
                                                     ? 'border-blue-500 bg-blue-50 text-blue-700'
                                                     : 'border-gray-200 hover:border-gray-300'
                                             }`}
@@ -336,7 +336,7 @@ export default function ProfileManager({ onClose, onProfilesUpdate }: Props) {
                                     </div>
 
                                     {/* ✅ Customer Selection (only for RECEIVED) */}
-                                    {investmentForm.type === 'RECEIVED' && (
+                                    {investmentForm.type === 'WITHDRAWN' && (
                                         <div>
                                             <label className="block text-xs font-medium mb-1 text-blue-700">
                                                 Customer *

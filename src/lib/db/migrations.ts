@@ -1,7 +1,7 @@
-// src/lib/db/migrations.ts - Migrate from localStorage to IndexedDB
+// src/lib/db/migrations.ts - COMPLETE UPDATED VERSION
 
 import { db } from './schema';
-import type { Customer, Payment, Profile } from '@/types';
+import type { Customer, Payment, Profile, InvestmentEntry } from '@/types';
 
 // ============================================
 // MIGRATION FUNCTIONS
@@ -30,6 +30,105 @@ function getLocalStorageData<T>(key: string, defaultValue: T): T {
     } catch (error) {
         console.error(`Error reading ${key} from localStorage:`, error);
         return defaultValue;
+    }
+}
+
+/**
+ * ✅ NEW: Migrate investment types from RECEIVED to WITHDRAWN
+ */
+async function migrateInvestmentTypes(): Promise<void> {
+    try {
+        console.log('🔄 Checking investment type migration...');
+
+        const profiles = await db.profiles.toArray();
+        let migratedCount = 0;
+
+        for (const profile of profiles) {
+            if (profile.investmentHistory && profile.investmentHistory.length > 0) {
+                let needsMigration = false;
+
+                const updatedHistory = profile.investmentHistory.map((entry: any) => {
+                    if (entry.type === 'RECEIVED') {
+                        needsMigration = true;
+                        return {
+                            ...entry,
+                            type: 'WITHDRAWN'
+                        };
+                    }
+                    return entry;
+                });
+
+                if (needsMigration) {
+                    await db.profiles.update(profile.id, {
+                        investmentHistory: updatedHistory
+                    });
+                    migratedCount++;
+                    console.log(`✅ Migrated investment types for profile: ${profile.name}`);
+                }
+            }
+        }
+
+        if (migratedCount > 0) {
+            console.log(`✅ Successfully migrated ${migratedCount} profiles with investment entries`);
+        } else {
+            console.log('✅ No investment type migration needed');
+        }
+    } catch (error) {
+        console.error('❌ Investment migration failed:', error);
+    }
+}
+
+/**
+ * ✅ NEW: Ensure investmentHistory exists on all profiles
+ */
+async function ensureInvestmentHistory(): Promise<void> {
+    try {
+        console.log('🔄 Ensuring investment history exists...');
+
+        const profiles = await db.profiles.toArray();
+        let updatedCount = 0;
+
+        for (const profile of profiles) {
+            let needsUpdate = false;
+            const updates: any = {};
+
+            // Ensure investmentHistory array exists
+            if (!profile.investmentHistory) {
+                updates.investmentHistory = [];
+                needsUpdate = true;
+            }
+
+            // Ensure totalInvestment exists
+            if (profile.totalInvestment === undefined) {
+                // Calculate from history if exists
+                if (profile.investmentHistory && profile.investmentHistory.length > 0) {
+                    const totalInvested = profile.investmentHistory
+                        .filter((e: InvestmentEntry) => e.type === 'INVESTED')
+                        .reduce((sum: number, e: InvestmentEntry) => sum + e.amount, 0);
+
+                    const totalWithdrawn = profile.investmentHistory
+                        .filter((e: InvestmentEntry) => e.type === 'WITHDRAWN')
+                        .reduce((sum: number, e: InvestmentEntry) => sum + e.amount, 0);
+
+                    updates.totalInvestment = totalInvested - totalWithdrawn;
+                } else {
+                    updates.totalInvestment = 0;
+                }
+                needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+                await db.profiles.update(profile.id, updates);
+                updatedCount++;
+                console.log(`✅ Updated profile: ${profile.name}`);
+            }
+        }
+
+        if (updatedCount > 0) {
+            console.log(`✅ Ensured investment data for ${updatedCount} profiles`);
+        }
+    } catch (error) {
+        console.error('❌ Failed to ensure investment history:', error);
     }
 }
 
@@ -68,10 +167,15 @@ export async function migrateFromLocalStorage(): Promise<{
         });
 
         // ============================================
-        // STEP 2: Validate data
+        // STEP 2: Validate and fix data
         // ============================================
 
-        const validProfiles = profiles.filter(p => p.id && p.name);
+        const validProfiles = profiles.map(p => ({
+            ...p,
+            totalInvestment: p.totalInvestment || 0,
+            investmentHistory: p.investmentHistory || []
+        })).filter(p => p.id && p.name);
+
         const validCustomers = customers.filter(c => c.id && c.name);
         const validPayments = payments.filter(p => p.id && p.customerId && p.amount);
 
@@ -124,7 +228,13 @@ export async function migrateFromLocalStorage(): Promise<{
 
         const currentProfile = getLocalStorageData<Profile | null>('currentProfile', null);
         if (currentProfile) {
-            await db.setMeta('currentProfile', currentProfile);
+            // Fix the profile data before saving
+            const fixedProfile = {
+                ...currentProfile,
+                totalInvestment: currentProfile.totalInvestment || 0,
+                investmentHistory: currentProfile.investmentHistory || []
+            };
+            await db.setMeta('currentProfile', fixedProfile);
             console.log('✅ Migrated current profile');
         }
 
@@ -135,7 +245,14 @@ export async function migrateFromLocalStorage(): Promise<{
         }
 
         // ============================================
-        // STEP 5: Mark migration as complete
+        // STEP 5: Run investment data migrations
+        // ============================================
+
+        await migrateInvestmentTypes();
+        await ensureInvestmentHistory();
+
+        // ============================================
+        // STEP 6: Mark migration as complete
         // ============================================
 
         localStorage.setItem('migrated_to_indexeddb', 'true');
@@ -213,8 +330,8 @@ export async function initializeDefaultProfile(): Promise<void> {
             description: 'Default business account',
             gradient: 'from-blue-500 to-purple-500',
             createdAt: new Date().toISOString(),
-            totalInvestment: 0,  // ✅ NEW
-            investmentHistory: [],  // ✅ NEW
+            totalInvestment: 0,
+            investmentHistory: [],
         };
 
         await db.profiles.add(defaultProfile);
@@ -229,8 +346,11 @@ export async function initializeDefaultProfile(): Promise<void> {
  */
 export async function runMigrations(): Promise<void> {
     try {
-        // Check if migration is needed
+        console.log('🚀 Starting database migrations...');
+
+        // Check if migration is needed from localStorage
         if (needsMigration()) {
+            console.log('📥 Migrating from localStorage...');
             const result = await migrateFromLocalStorage();
 
             if (result.success) {
@@ -243,13 +363,21 @@ export async function runMigrations(): Promise<void> {
                 console.error('❌ Migration failed:', result.errors);
                 alert('Data migration failed! Please contact support.');
             }
+        } else {
+            console.log('✅ No localStorage migration needed');
         }
 
         // Initialize default profile if needed
         await initializeDefaultProfile();
 
+        // ✅ Run investment-specific migrations
+        await migrateInvestmentTypes();
+        await ensureInvestmentHistory();
+
         // Cleanup old data if time has passed
         cleanupOldLocalStorage();
+
+        console.log('✅ All migrations completed!');
 
     } catch (error) {
         console.error('❌ Migration error:', error);

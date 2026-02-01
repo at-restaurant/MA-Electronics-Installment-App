@@ -15,7 +15,7 @@ export interface InvestmentEntry {
     amount: number;
     date: string;
     note?: string;
-    type: 'INVESTED' | 'RECEIVED'; // ✅ ADDED
+    type: 'INVESTED' | 'WITHDRAWN';
     customerId?: number; // ✅ ADDED
 }
 
