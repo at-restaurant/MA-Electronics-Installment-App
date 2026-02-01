@@ -1,4 +1,4 @@
-// src/lib/compression.ts - UNIFIED IMAGE COMPRESSION
+// src/lib/compression.ts - ✅ FIXED WITH BATCH PROCESSING
 
 interface CompressionOptions {
     maxWidth?: number;
@@ -130,13 +130,42 @@ export class ImageCompression {
     }
 
     /**
-     * Compress multiple images
+     * ✅ FIXED: Compress multiple images with batching (prevents memory issues)
+     * @param inputs - Array of files or base64 strings
+     * @param options - Compression options
+     * @param batchSize - Number of images to process simultaneously (default: 3)
      */
     static async compressMultiple(
         inputs: (File | string)[],
-        options: CompressionOptions = {}
+        options: CompressionOptions = {},
+        batchSize: number = 3
     ): Promise<string[]> {
-        return Promise.all(inputs.map(input => this.compress(input, options)));
+        const results: string[] = [];
+        const totalBatches = Math.ceil(inputs.length / batchSize);
+
+        // Process in batches to avoid memory overload on low-end devices
+        for (let i = 0; i < inputs.length; i += batchSize) {
+            const batch = inputs.slice(i, i + batchSize);
+            const batchNumber = Math.floor(i / batchSize) + 1;
+
+            console.log(`🔄 Compressing batch ${batchNumber}/${totalBatches} (${batch.length} images)...`);
+
+            const compressed = await Promise.all(
+                batch.map(input => this.compress(input, options))
+            );
+
+            results.push(...compressed);
+
+            console.log(`✅ Batch ${batchNumber}/${totalBatches} complete`);
+
+            // Small delay between batches to let browser breathe
+            if (i + batchSize < inputs.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        console.log(`✅ All ${inputs.length} images compressed successfully!`);
+        return results;
     }
 
     /**
