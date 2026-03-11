@@ -1,4 +1,4 @@
-// src/app/layout.tsx - WITH NOTIFICATIONS ENABLED
+// src/app/layout.tsx - FIXED
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
@@ -19,9 +19,7 @@ export const metadata: Metadata = {
         statusBarStyle: 'default',
         title: 'MA Electronics',
     },
-    formatDetection: {
-        telephone: false,
-    },
+    formatDetection: { telephone: false },
     icons: {
         icon: '/favicon.ico',
         apple: '/icon-192x192.png',
@@ -36,11 +34,7 @@ export const viewport: Viewport = {
     userScalable: false,
 };
 
-export default function RootLayout({
-                                       children,
-                                   }: {
-    children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" suppressHydrationWarning>
         <head>
@@ -49,59 +43,44 @@ export default function RootLayout({
             <link rel="apple-touch-icon" href="/icon-192x192.png" />
         </head>
         <body className={inter.className}>
-        {/* Initialize database and run migrations */}
+
         <DatabaseInitializer />
-
-        {/* Show offline/online status */}
         <OfflineIndicator />
-
-        {/* Notification system */}
         <NotificationInitializer />
 
-        {/* App content */}
         {children}
 
-        {/* Install prompt */}
         <InstallPrompt />
 
-        {/* Service Worker Registration */}
         <script
             dangerouslySetInnerHTML={{
                 __html: `
-              // Service Worker registration
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                  navigator.serviceWorker.register('/sw.js')
-                    .then(reg => {
-                      console.log('✅ Service Worker registered:', reg.scope);
-                      
-                      reg.addEventListener('updatefound', () => {
-                        const newWorker = reg.installing;
-                        if (newWorker) {
-                          newWorker.addEventListener('statechanged', () => {
-                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                              if (confirm('🔄 New version available! Update now?')) {
-                                newWorker.postMessage({ type: 'SKIP_WAITING' });
-                                window.location.reload();
-                              }
-                            }
-                          });
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+              navigator.serviceWorker.register('/sw.js')
+                .then(function(reg) {
+                  console.log('SW registered:', reg.scope);
+
+                  reg.addEventListener('updatefound', function() {
+                    var newWorker = reg.installing;
+                    if (newWorker) {
+                      newWorker.addEventListener('statechange', function() {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                          if (confirm('New update available! Reload now?')) {
+                            newWorker.postMessage({ type: 'SKIP_WAITING' });
+                            window.location.reload();
+                          }
                         }
                       });
-                    })
-                    .catch(err => {
-                      console.log('❌ Service Worker registration failed:', err);
-                    });
+                    }
+                  });
+                })
+                .catch(function(err) {
+                  console.log('SW registration failed:', err);
                 });
-              }
-              
-              // Initialize notification scheduler
-              if ('Notification' in window) {
-                import('@/lib/notificationScheduler.js').then(module => {
-                  module.NotificationScheduler.start();
-                });
-              }
-            `,
+            });
+          }
+        `,
             }}
         />
         </body>

@@ -1,17 +1,24 @@
-// public/sw.js - PRODUCTION-READY SERVICE WORKER
+// public/sw.js - FIXED VERSION
 
-const CACHE_VERSION = 'v1.0.0';
+const CACHE_VERSION = 'v1.1.0';
 const STATIC_CACHE = `ma-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `ma-dynamic-${CACHE_VERSION}`;
 const IMAGE_CACHE = `ma-images-${CACHE_VERSION}`;
 
-// Critical assets to cache immediately
+// ✅ FIX 1: Saare app routes explicitly cache karo
 const STATIC_ASSETS = [
     '/',
+    '/dashboard',
+    '/customers',
+    '/customers/add',
+    '/collection',
+    '/pending',
+    '/settings',
+    '/daily',
     '/manifest.json',
+    '/offline.html',
     '/icon-192x192.png',
     '/icon-512x512.png',
-    '/offline.html',
 ];
 
 // ============================================
@@ -24,10 +31,26 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(STATIC_CACHE)
             .then(cache => {
-                console.log('✅ SW: Caching static assets');
-                return cache.addAll(STATIC_ASSETS);
+                console.log('✅ SW: Caching static assets & app routes');
+
+                // ✅ FIX 2: Promise.allSettled use karo
+                // Agar ek route fail ho toh pura install fail na ho
+                return Promise.allSettled(
+                    STATIC_ASSETS.map(url =>
+                        fetch(url)
+                            .then(res => {
+                                if (res.ok) return cache.put(url, res);
+                            })
+                            .catch(err => {
+                                console.warn(`SW: Could not cache ${url}:`, err);
+                            })
+                    )
+                );
             })
-            .then(() => self.skipWaiting())
+            .then(() => {
+                console.log('✅ SW: Install complete');
+                return self.skipWaiting();
+            })
             .catch(err => console.error('❌ SW: Install failed:', err))
     );
 });
@@ -109,7 +132,6 @@ self.addEventListener('fetch', (event) => {
                             return response;
                         })
                         .catch(() => {
-                            // Return placeholder SVG
                             return new Response(
                                 '<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><rect fill="#e5e7eb" width="200" height="200"/><text x="50%" y="50%" text-anchor="middle" fill="#9ca3af" font-size="16">Offline</text></svg>',
                                 { headers: { 'Content-Type': 'image/svg+xml' } }
@@ -121,14 +143,13 @@ self.addEventListener('fetch', (event) => {
     }
 
     // ============================================
-    // STRATEGY 3: Network First (HTML pages)
+    // STRATEGY 3: Network First (HTML/Navigation)
     // ============================================
 
     if (request.mode === 'navigate') {
         event.respondWith(
             fetch(request)
                 .then(response => {
-                    // Cache successful responses
                     if (response.ok) {
                         const clone = response.clone();
                         caches.open(DYNAMIC_CACHE)
@@ -136,22 +157,25 @@ self.addEventListener('fetch', (event) => {
                     }
                     return response;
                 })
-                .catch(() => {
-                    // Try cache first
-                    return caches.match(request)
-                        .then(cached => {
-                            if (cached) return cached;
+                .catch(async () => {
+                    // ✅ FIX 3: Smart fallback chain
+                    // Step 1: Try exact route
+                    const exactMatch = await caches.match(request);
+                    if (exactMatch) return exactMatch;
 
-                            // Fallback to offline page
-                            return caches.match('/offline.html');
-                        });
+                    // Step 2: Serve root '/' — Next.js client-side routing sambhal lega
+                    const rootMatch = await caches.match('/');
+                    if (rootMatch) return rootMatch;
+
+                    // Step 3: LAST RESORT — offline page
+                    return caches.match('/offline.html');
                 })
         );
         return;
     }
 
     // ============================================
-    // STRATEGY 4: Stale While Revalidate (Assets)
+    // STRATEGY 4: Stale While Revalidate (JS/CSS chunks)
     // ============================================
 
     event.respondWith(
@@ -179,7 +203,6 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('sync', (event) => {
     console.log('🔄 SW: Background sync:', event.tag);
-
     if (event.tag === 'sync-data') {
         event.waitUntil(syncData());
     }
@@ -189,10 +212,7 @@ async function syncData() {
     try {
         const clients = await self.clients.matchAll();
         clients.forEach(client => {
-            client.postMessage({
-                type: 'SYNC_NOW',
-                timestamp: Date.now(),
-            });
+            client.postMessage({ type: 'SYNC_NOW', timestamp: Date.now() });
         });
         console.log('✅ SW: Sync message sent');
     } catch (error) {
@@ -206,7 +226,6 @@ async function syncData() {
 
 self.addEventListener('push', (event) => {
     const data = event.data ? event.data.json() : {};
-
     const options = {
         body: data.body || 'You have a new notification',
         icon: '/icon-192x192.png',
@@ -220,22 +239,15 @@ self.addEventListener('push', (event) => {
             { action: 'dismiss', title: 'Dismiss' },
         ],
     };
-
     event.waitUntil(
-        self.registration.showNotification(
-            data.title || 'MA Installment',
-            options
-        )
+        self.registration.showNotification(data.title || 'MA Installment', options)
     );
 });
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-
     if (event.action === 'view') {
-        event.waitUntil(
-            clients.openWindow(event.notification.data.url || '/')
-        );
+        event.waitUntil(clients.openWindow(event.notification.data.url || '/'));
     }
 });
 
@@ -247,19 +259,14 @@ self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
     }
-
     if (event.data && event.data.type === 'CACHE_URLS') {
         event.waitUntil(
-            caches.open(DYNAMIC_CACHE)
-                .then(cache => cache.addAll(event.data.urls))
+            caches.open(DYNAMIC_CACHE).then(cache => cache.addAll(event.data.urls))
         );
     }
-
     if (event.data && event.data.type === 'CLEAR_CACHE') {
         event.waitUntil(
-            caches.keys().then(keys =>
-                Promise.all(keys.map(key => caches.delete(key)))
-            )
+            caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key))))
         );
     }
 });

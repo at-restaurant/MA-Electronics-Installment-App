@@ -41,7 +41,7 @@
       "name": "Daily Collection",
       "short_name": "Daily",
       "description": "Mark daily payments",
-      "url": "/daily",
+      "url": "/collection",
       "icons": [{"src": "/icon-192x192.png", "sizes": "192x192"}]
     },
     {

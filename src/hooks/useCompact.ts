@@ -1,4 +1,4 @@
-// src/hooks/useCompact.ts - FIXED
+// src/hooks/useCompact.ts - FIXED (No offline redirect loop)
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/db';
@@ -43,13 +43,57 @@ export function useProfile() {
     }, []);
 
     const loadProfile = async () => {
-        const p = await db.getMeta<Profile | null>('currentProfile', null);
-        if (!p) {
-            router.push('/');
-            return;
+        try {
+            // FIX: Retry up to 3 times — IndexedDB can be slow on first load
+            let p: Profile | null = null;
+            for (let i = 0; i < 3; i++) {
+                p = (await db.getMeta<Profile | null>('currentProfile', null)) ?? null;
+                if (p) break;
+
+                // Also check profiles table directly
+                const profiles = await db.profiles.toArray();
+                if (profiles.length > 0) {
+                    p = profiles[0];
+                    await db.setMeta('currentProfile', p);
+                    break;
+                }
+
+                if (i < 2) await new Promise(r => setTimeout(r, 300));
+            }
+
+            if (!p) {
+                // FIX: Don't redirect — create default profile instead
+                const existingCount = await db.profiles.count();
+                if (existingCount === 0) {
+                    const defaultProfile: Profile = {
+                        id: Date.now(),
+                        name: 'My Business',
+                        description: 'Default account',
+                        gradient: 'from-blue-500 to-purple-500',
+                        createdAt: new Date().toISOString(),
+                        totalInvestment: 0,
+                        investmentHistory: [],
+                    };
+                    await db.profiles.add(defaultProfile);
+                    await db.setMeta('currentProfile', defaultProfile);
+                    p = defaultProfile;
+                } else {
+                    // Profiles exist but meta missing — fix it
+                    const firstProfile = await db.profiles.toCollection().first();
+                    if (firstProfile) {
+                        await db.setMeta('currentProfile', firstProfile);
+                        p = firstProfile;
+                    }
+                }
+            }
+
+            setProfile(p);
+        } catch (error) {
+            console.error('useProfile error:', error);
+            // FIX: Don't redirect on error — show null state gracefully
+        } finally {
+            setLoading(false);
         }
-        setProfile(p);
-        setLoading(false);
     };
 
     return { profile, loading, reload: loadProfile };
@@ -66,9 +110,15 @@ export function useCompactCustomers(profileId?: number) {
 
     const load = async () => {
         if (!profileId) return;
-        const data = await db.getCustomersByProfile(profileId);
-        setCustomers(data);
-        setLoading(false);
+        try {
+            const data = await db.getCustomersByProfile(profileId);
+            setCustomers(data);
+        } catch (error) {
+            console.error('useCompactCustomers error:', error);
+            setCustomers([]);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const add = async (c: Omit<Customer, 'id' | 'createdAt'>) => {
@@ -150,9 +200,7 @@ export function useFilter<T extends Record<string, any>>(
     const filtered = items.filter(item => {
         if (query) {
             const matches = searchFields.some(field =>
-                String(item[field])
-                    .toLowerCase()
-                    .includes(query.toLowerCase())
+                String(item[field]).toLowerCase().includes(query.toLowerCase())
             );
             if (!matches) return false;
         }
